@@ -77,7 +77,7 @@ app = FastAPI(
     """,
     contact={
         "name": "Insight MVP",
-        "url": "https://github.com/your-repo/insight-mvp",
+        "url": "https://github.com/Darknight6039/insight-map",
     },
 )
 
