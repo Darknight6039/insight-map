@@ -1,0 +1,134 @@
+name: ${COMPOSE_PROJECT_NAME:-insight_mvp}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  gateway-api:
+    build: ./gateway-api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - document-service
+      - vector-service
+      - rag-service
+      - report-service
+      - status-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # volumes:
+      # - ./gateway-api:/app
+
+  document-service:
+    build: ./document-service
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./data:/app/data
+
+  vector-service:
+    build: ./vector-service
+    env_file: .env
+    ports:
+      - "8002:8002"
+    depends_on:
+      - qdrant
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    # volumes:
+      # - ./vector-service:/app
+
+  rag-service:
+    build: ./rag-service
+    env_file: .env
+    ports:
+      - "8003:8003"
+    depends_on:
+      - vector-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    # volumes:
+      # - ./rag-service:/app
+
+  report-service:
+    build: ./report-service
+    env_file: .env
+    ports:
+      - "8004:8004"
+    depends_on:
+      - postgres
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+    volumes:
+      - ./data:/app/data
+
+  status-service:
+    build: ./status-service
+    env_file: .env
+    ports:
+      - "8005:8005"
+    depends_on:
+      - postgres
+      - qdrant
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+    # volumes:
+      # - ./status-service:/app
+
+  # frontend-nextjs:
+  #   build: ./frontend/nextjs
+  #   env_file: .env
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - gateway-api
+  #   # volumes:
+  #     # - ./frontend/nextjs:/app
+  #   command: sh -c "npm install && npm run dev"
+
+  # frontend-streamlit:
+  #   build: ./frontend/streamlit
+  #   env_file: .env
+  #   ports:
+  #     - "8501:8501"
+  #   depends_on:
+  #     - gateway-api
+  #   # volumes:
+  #     # - ./frontend/streamlit:/app
+
+volumes:
+  postgres_data:
+  qdrant_storage:
+
+
