@@ -112,7 +112,7 @@ def call_openai(prompt: str, analysis_type: str = "general") -> str:
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
