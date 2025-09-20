@@ -1,5 +1,65 @@
 # 📝 CHANGELOG - Insight MVP
 
+## [v1.1.0] - 2025-09-20 - RAG Amélioré + Interface Gradio
+
+### 🎯 **Milestone: RAG Professionnel avec Formatage McKinsey/BCG**
+
+#### ✨ **Nouvelles Fonctionnalités**
+
+**🧠 Service RAG Amélioré**
+- Vraie recherche vectorielle avec scores de pertinence
+- Formatage professionnel style consultant (McKinsey/BCG)
+- Templates structurés pour les 5 types d'analyses
+- Citations et références documentaires automatiques
+- GPT-4o-mini avec 4000 tokens pour réponses complètes
+
+**🎨 Interface Gradio Moderne**
+- Dashboard interactif avec métriques temps réel
+- Interface utilisateur dark theme professionnelle
+- Boutons d'actions rapides pour chaque analyse
+- Composants modulaires (api_client, dashboard)
+
+**📚 Indexation Documentaire**
+- Scripts d'indexation automatique des PDFs
+- Gestion 87 documents financiers
+- Timeout optimisé pour gros fichiers
+- Indexation par batch avec retry
+
+#### 🔧 **Améliorations Techniques**
+
+**Backend**
+- Multiple versions RAG (working, enhanced, final) pour stabilité
+- Gestion robuste erreurs OpenAI avec fallbacks
+- Recherche vectorielle Qdrant + OpenAI embeddings
+- Architecture microservices maintenue
+
+**Frontend**
+- Composants Gradio réutilisables
+- CSS personnalisé pour branding
+- API client asynchrone avec httpx
+
+#### 🐛 **Corrections**
+- Fix paramètres OpenAI (max_tokens vs max_completion_tokens)
+- Ajout dépendance `requests` manquante dans rag-service
+- Dockerfiles vector-service et rag-service mis à jour
+- Timeout indexation optimisé pour stabilité
+
+#### 📁 **Nouvelle Structure**
+```
+insight-mvp/
+├── frontend-gradio/          # Interface Gradio moderne
+│   ├── app/                  # Applications (main, simple, minimal)
+│   ├── components/           # Composants réutilisables
+│   └── assets/               # CSS et ressources
+├── scripts/                  # Indexation et tests
+│   ├── index_all_pdfs.py     # Indexation complète
+│   └── index_quick.py        # Test rapide 3 PDFs
+└── rag-service/app/          # Multiple versions RAG
+    ├── rag_main.py           # Version finale optimisée
+    ├── enhanced_main.py      # Version améliorée
+    └── working_main.py       # Version stable
+```
+
 ## [v1.0.0] - 2024-09-20 - Initial MVP Release
 
 ### 🎯 **Milestone: Backend Microservices MVP Complet**
