@@ -40,9 +40,15 @@ def search_documents(query: str, top_k: int = 8) -> List[Dict]:
         
         if response.status_code == 200:
             result = response.json()
-            return result.get("results", [])
+            # Vector-service returns a list of results; support both list and dict
+            if isinstance(result, list):
+                return result
+            if isinstance(result, dict):
+                return result.get("results", result.get("data", []))
+            return []
         else:
             logger.warning(f"Vector search failed: {response.status_code}")
+            # Retourner une réponse simulée pour continuer le service
             return []
             
     except Exception as e:

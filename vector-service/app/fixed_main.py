@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 import numpy as np
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.http.models import VectorParams, Distance, PointStruct
 import os
 import logging
 from loguru import logger
@@ -16,18 +16,39 @@ from loguru import logger
 # Configuration
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_URL = os.getenv("QDRANT_URL", f"http://{QDRANT_HOST}:{QDRANT_PORT}")
 COLLECTION = "documents"
 EMBEDDING_DIM = 1536  # Standard OpenAI embedding dimension
 
 app = FastAPI(title="Vector Service", description="Vector embeddings and similarity search")
 
-# Initialize Qdrant client
-try:
-    qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-    logger.info(f"Connected to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
-except Exception as e:
-    logger.error(f"Failed to connect to Qdrant: {e}")
-    qdrant_client = None
+# Initialize Qdrant client (with URL and retry)
+def create_qdrant_client_with_retry(max_retries: int = 10, delay_seconds: float = 1.0):
+    import time
+    last_error: Optional[Exception] = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            client = QdrantClient(url=QDRANT_URL, prefer_grpc=False, timeout=5.0)
+            # Trigger a lightweight call to ensure connectivity
+            client.get_collections()
+            logger.info(f"Connected to Qdrant at {QDRANT_URL} (attempt {attempt})")
+            return client
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Qdrant not ready (attempt {attempt}/{max_retries}): {e}")
+            time.sleep(delay_seconds)
+    logger.error(f"Failed to connect to Qdrant after {max_retries} attempts: {last_error}")
+    return None
+
+qdrant_client = create_qdrant_client_with_retry()
+
+def ensure_qdrant_client() -> Optional[QdrantClient]:
+    """Lazy re-connect if client is not yet available."""
+    global qdrant_client
+    if qdrant_client is not None:
+        return qdrant_client
+    qdrant_client = create_qdrant_client_with_retry(max_retries=20, delay_seconds=0.5)
+    return qdrant_client
 
 class UpsertPayload(BaseModel):
     doc_id: int
@@ -59,15 +80,16 @@ def generate_mock_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float]:
 
 def ensure_collection(dim: int = EMBEDDING_DIM):
     """Ensure collection exists in Qdrant"""
-    if not qdrant_client:
+    client = ensure_qdrant_client()
+    if not client:
         return
     
     try:
-        existing = qdrant_client.get_collections()
+        existing = client.get_collections()
         names = [c.name for c in existing.collections]
         
         if COLLECTION not in names:
-            qdrant_client.create_collection(
+            client.create_collection(
                 collection_name=COLLECTION,
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
@@ -90,7 +112,8 @@ def health_check():
 def upsert_embedding(payload: UpsertPayload):
     """Index document segments with mock embeddings"""
     try:
-        if not qdrant_client:
+        client = ensure_qdrant_client()
+        if not client:
             raise HTTPException(status_code=500, detail="Qdrant client not available")
         
         ensure_collection(EMBEDDING_DIM)
@@ -120,7 +143,7 @@ def upsert_embedding(payload: UpsertPayload):
             )
         
         # Upsert to Qdrant
-        qdrant_client.upsert(collection_name=COLLECTION, wait=True, points=points)
+        client.upsert(collection_name=COLLECTION, wait=True, points=points)
         logger.info(f"Successfully indexed {len(points)} segments for document {payload.doc_id}")
         
         return {
@@ -137,14 +160,15 @@ def upsert_embedding(payload: UpsertPayload):
 def search_vectors(payload: SearchPayload):
     """Search for similar vectors"""
     try:
-        if not qdrant_client:
+        client = ensure_qdrant_client()
+        if not client:
             raise HTTPException(status_code=500, detail="Qdrant client not available")
         
         # Generate embedding for query
         query_vector = generate_mock_embedding(payload.query, EMBEDDING_DIM)
         
         # Search in Qdrant
-        search_results = qdrant_client.search(
+        search_results = client.search(
             collection_name=COLLECTION,
             query_vector=query_vector,
             limit=payload.top_k,

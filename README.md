@@ -21,6 +21,13 @@ Plateforme complète de veille stratégique qui transforme vos documents PDF en 
 - 🐳 **Architecture microservices** containerisée
 - ✅ **Tests complets** unitaires et d'intégration
 
+### 🔄 Nouveautés (v1.1)
+- 💬 **Chat intégré au Dashboard**: le panneau central affiche `ChatInterface` sans changer de page
+- ⚡ **Streaming de réponses**: endpoint `POST /chat/stream` (texte chunké) et rendu progressif côté frontend
+- ⛔ **Bouton Stop**: annule proprement un flux en cours (AbortController)
+- 🧭 **Sidebar fixe desktop**: navigation visible en permanence ≥1024px
+- 🎨 **Accent corporate plus visible**: `#00c2b2` (bleu canard) pour lisibilité renforcée
+
 ### Structure de projet
 ```
 data/
@@ -91,6 +98,13 @@ docker-compose up -d --build
 curl -s http://localhost:8000/health/services | jq
 ```
 
+### 3.b (Mise à jour UI/Streaming uniquement)
+```bash
+# Rebuild ciblé backend (stream) + frontend (Tailwind/accents)
+docker compose build backend-service frontend-openwebui
+docker compose up -d backend-service frontend-openwebui
+```
+
 ### 3. Ingestion de documents
 ```bash
 # Copier vos PDFs dans le dossier data/pdfs/
@@ -113,9 +127,30 @@ python3 scripts/test_workflow.py
 ```
 
 ### UI Next.js (Apple-like)
-- Dashboard: logo, stats système, actions (recherche, documents, rapports)
+- Dashboard: logo, stats système, actions (recherche, documents, rapports), **chat intégré**
 - Recherche: input, suggestions, résultats avec score
 - Dark mode + glassmorphism (blur, panneaux translucides)
+
+### 🔌 Streaming Chat (Backend)
+Endpoint: `POST http://localhost:8006/chat/stream`
+
+- Corps JSON:
+```json
+{
+  "message": "Votre question",
+  "business_type": "finance_banque",
+  "conversation_history": [{"role":"user","content":"..."}]
+}
+```
+
+- Réponse: texte brut en flux (chunks) terminée par `[DONE]`
+
+- Exemple rapide:
+```bash
+curl -N -X POST http://localhost:8006/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Bonjour","business_type":"finance_banque"}'
+```
 
 ### Sécurité & Local-first
 - Données + vecteurs en local (Postgres + Qdrant)

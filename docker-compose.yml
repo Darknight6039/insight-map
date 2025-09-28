@@ -1,34 +1,27 @@
-name: ${COMPOSE_PROJECT_NAME:-insight_mvp}
+version: '3.8'
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:15
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: insight_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    networks:
+      - insight-network
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.5.1
     ports:
       - "6333:6333"
     volumes:
-      - qdrant_storage:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+      - qdrant_data:/qdrant/storage
+    networks:
+      - insight-network
 
   gateway-api:
     build: ./gateway-api
@@ -36,19 +29,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - document-service
-      - vector-service
-      - rag-service
-      - report-service
-      - status-service
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    # volumes:
-      # - ./gateway-api:/app
+      - postgres
+      - qdrant
+    networks:
+      - insight-network
 
   document-service:
     build: ./document-service
@@ -57,9 +41,11 @@ services:
       - "8001:8001"
     depends_on:
       - postgres
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+      - vector-service
+    networks:
+      - insight-network
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
 
   vector-service:
     build: ./vector-service
@@ -68,9 +54,9 @@ services:
       - "8002:8002"
     depends_on:
       - qdrant
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
-    # volumes:
-      # - ./vector-service:/app
+    networks:
+      - insight-network
+    command: uvicorn app.fixed_main:app --host 0.0.0.0 --port 8002
 
   rag-service:
     build: ./rag-service
@@ -79,9 +65,9 @@ services:
       - "8003:8003"
     depends_on:
       - vector-service
+    networks:
+      - insight-network
     command: uvicorn app.rag_main:app --host 0.0.0.0 --port 8003
-    # volumes:
-      # - ./rag-service:/app
 
   report-service:
     build: ./report-service
@@ -90,9 +76,11 @@ services:
       - "8004:8004"
     depends_on:
       - postgres
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+    networks:
+      - insight-network
+    command: uvicorn app.enhanced_main:app --host 0.0.0.0 --port 8004 --reload
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
 
   status-service:
     build: ./status-service
@@ -102,9 +90,23 @@ services:
     depends_on:
       - postgres
       - qdrant
+    networks:
+      - insight-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
-    # volumes:
-      # - ./status-service:/app
+
+  backend-service:
+    build: ./backend-service
+    env_file: .env
+    ports:
+      - "8006:8006"
+    depends_on:
+      - rag-service
+      - report-service
+    networks:
+      - insight-network
+    volumes:
+      - ./data:/app/data:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
 
   frontend-gradio:
     build: ./frontend-gradio
@@ -112,19 +114,41 @@ services:
     ports:
       - "7860:7860"
     depends_on:
-      - gateway-api
-    environment:
-      - GATEWAY_URL=http://gateway-api:8000
+      - backend-service
+      - report-service
+    networks:
+      - insight-network
     volumes:
       - ./data:/app/data:ro
+    command: python app/business_main.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860"]
       interval: 30s
       timeout: 10s
       retries: 3
 
+  # Modern Open WebUI Frontend with Liquid Glass Design
+  frontend-openwebui:
+    build:
+      context: ./frontend-openwebui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8006
+    depends_on:
+      - gateway-api
+      - backend-service
+    networks:
+      - insight-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
-  qdrant_storage:
+  qdrant_data:
 
-
+networks:
+  insight-network:
+    driver: bridge

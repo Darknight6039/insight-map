@@ -1,0 +1,288 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Variables CSS pour le thème corporate tech */
+:root {
+  --glass-bg: rgba(26, 32, 44, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  
+  /* Palette Corporate Tech */
+  --primary: #1a202c;           /* Navy dark */
+  --secondary: #2d3748;         /* Charcoal */
+  --accent: #00a3ff;            /* Tech blue */
+  --surface: #f7fafc;           /* Clean white */
+  --text-primary: #2d3748;      /* Dark text */
+  --text-secondary: #718096;    /* Gray text */
+  --text-white: #ffffff;        /* White text */
+  --success: #38a169;           /* Green */
+  --warning: #ed8936;           /* Orange */
+  --error: #e53e3e;             /* Red */
+  
+  /* Glass effects adaptés */
+  --glass-primary: rgba(26, 32, 44, 0.9);
+  --glass-secondary: rgba(45, 55, 72, 0.8);
+  --glass-accent: rgba(0, 163, 255, 0.1);
+
+  /* Axial brand variables (align with Tailwind theme.extend.colors.axial) */
+  --axial-blue: #1a202c;
+  --axial-light-blue: #2d3748;
+  /* Accent corporate plus visible (bleu canard) */
+  --axial-accent: #00c2b2;
+}
+
+/* Body avec background corporate */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #__next {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, #4a5568 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+  color: var(--text-white);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Glass morphism utilities corporate */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-card {
+  @apply glass rounded-2xl p-6 transition-all duration-300;
+  background: var(--glass-primary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card:hover {
+  background: var(--glass-secondary);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.glass-button {
+  @apply glass rounded-xl px-6 py-3 transition-all duration-300 hover:scale-105 active:scale-95;
+  background: var(--glass-accent);
+  border: 1px solid var(--accent);
+}
+
+.glass-button:hover {
+  background: rgba(0, 163, 255, 0.2);
+  box-shadow: 0 8px 25px rgba(0, 163, 255, 0.3);
+}
+
+.liquid-blob {
+  background: linear-gradient(45deg, var(--primary), var(--accent), var(--secondary));
+  filter: blur(40px);
+  opacity: 0.2;
+  animation: liquid 8s ease-in-out infinite;
+}
+
+/* Chat bubble avec effet liquid */
+.chat-bubble {
+  @apply glass-card relative overflow-hidden;
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(0, 212, 170, 0.1), transparent);
+  transform: rotate(45deg);
+  transition: all 0.6s;
+}
+
+.chat-bubble:hover::before {
+  transform: rotate(45deg) translate(50%, 50%);
+}
+
+/* Scrollbar personnalisée */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--axial-accent);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--axial-light-blue);
+}
+
+/* Effet glow pour les éléments interactifs */
+.glow-on-hover {
+  transition: all 0.3s ease;
+}
+
+.glow-on-hover:hover {
+  box-shadow: 0 0 20px rgba(0, 212, 170, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Animation de chargement liquide */
+.loading-liquid {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, var(--axial-blue), var(--axial-accent));
+  animation: liquid 2s ease-in-out infinite;
+}
+
+/* Effet parallax subtil */
+.parallax {
+  transform: translateZ(0);
+  transition: transform 0.1s ease-out;
+}
+
+/* Cards avec effet de profondeur */
+.depth-card {
+  @apply glass-card relative;
+  transform-style: preserve-3d;
+}
+
+.depth-card:hover {
+  transform: perspective(1000px) rotateX(5deg) rotateY(5deg);
+}
+
+/* Input fields avec style liquid */
+.input-liquid {
+  @apply glass rounded-xl border-0 px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-axial-accent transition-all duration-300;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.input-liquid:focus {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.02);
+}
+
+/* Boutons avec effet liquid */
+.btn-liquid {
+  @apply relative overflow-hidden rounded-xl px-6 py-3 font-medium text-white transition-all duration-300;
+  background: linear-gradient(45deg, var(--axial-blue), var(--axial-light-blue));
+}
+
+.btn-liquid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-liquid:hover::before {
+  left: 100%;
+}
+
+.btn-liquid:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 83, 170, 0.3);
+}
+
+/* Navbar corporate avec effet glass - TOUJOURS VISIBLE */
+.navbar-glass {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100vw !important;
+  z-index: 1000 !important;
+  padding: 1rem 1.5rem !important;
+  background: var(--glass-primary) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+  display: block !important;
+  visibility: visible !important;
+}
+
+/* Sidebar avec effet liquid */
+.sidebar-liquid {
+  @apply glass fixed left-0 top-0 h-full w-80 p-6;
+  backdrop-filter: blur(20px);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+
+.sidebar-liquid.open {
+  transform: translateX(0);
+}
+
+/* Effet de typing pour le chat */
+.typing-indicator {
+  @apply flex space-x-1;
+}
+
+.typing-dot {
+  @apply w-2 h-2 bg-axial-accent rounded-full animate-bounce;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+/* Messages avec style liquid */
+.message-user {
+  @apply glass-card ml-auto max-w-xs;
+  background: linear-gradient(45deg, var(--axial-blue), var(--axial-light-blue));
+}
+
+.message-assistant {
+  @apply glass-card mr-auto max-w-md;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .glass-card {
+    @apply p-4;
+  }
+  
+  .sidebar-liquid {
+    @apply w-full;
+  }
+}
+
+/* Dark mode improvements */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg: rgba(0, 0, 0, 0.2);
+    --glass-border: rgba(255, 255, 255, 0.1);
+  }
+}
