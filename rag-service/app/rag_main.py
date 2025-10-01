@@ -3,6 +3,7 @@ RAG Service Final - Version qui fonctionne avec vraie recherche vectorielle et f
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import os
@@ -11,6 +12,15 @@ from datetime import datetime
 from loguru import logger
 
 app = FastAPI(title="RAG Service Final", description="RAG avec recherche vectorielle")
+
+# Configuration CORS pour permettre les requêtes depuis le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, spécifier les origines autorisées
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

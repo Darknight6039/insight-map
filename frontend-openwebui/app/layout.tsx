@@ -7,8 +7,8 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Axial Intelligence - Strategic AI Platform',
-  description: 'Plateforme d\'analyse stratégique avec IA et design liquid glass',
-  keywords: ['intelligence', 'stratégie', 'analyse', 'IA', 'consultation'],
+  description: 'Plateforme d\'intelligence stratégique par IA. Rapports d\'analyse, chat expert et export PDF.',
+  keywords: ['intelligence', 'stratégie', 'analyse', 'IA', 'consultation', 'rapports', 'business'],
   authors: [{ name: 'Axial' }],
 }
 

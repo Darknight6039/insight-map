@@ -5,6 +5,22 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Bot, User, Sparkles, Copy, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { toast } from 'react-hot-toast'
+import MessageWithCitations from './MessageWithCitations'
+import DocumentModal from './DocumentModal'
+
+interface Source {
+  id: number
+  doc_id: number | string
+  title?: string
+  author?: string
+  year?: number
+  page?: number
+  doc_type?: string
+  text: string
+  score?: number
+  apa_citation?: string
+  document_url?: string
+}
 
 interface Message {
   id: string
@@ -12,6 +28,7 @@ interface Message {
   content: string
   timestamp: Date
   businessContext?: string
+  sources?: Source[]
 }
 
 interface ChatInterfaceProps {
@@ -26,13 +43,15 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
       type: 'assistant',
       content: '👋 Bonjour ! Je suis votre expert en intelligence stratégique. Comment puis-je vous aider aujourd\'hui ?',
       timestamp: new Date(),
-      businessContext: 'Généraliste'
+      businessContext: 'Généraliste',
+      sources: []
     }
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -42,16 +61,6 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
     scrollToBottom()
   }, [messages])
 
-  // Abort streaming on unmount
-  useEffect(() => {
-    return () => abortRef.current?.abort()
-  }, [])
-
-  const stopStreaming = () => {
-    abortRef.current?.abort()
-    setIsLoading(false)
-  }
-
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
 
@@ -59,7 +68,8 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
       id: Date.now().toString(),
       type: 'user',
       content: input,
-      timestamp: new Date()
+      timestamp: new Date(),
+      sources: []
     }
 
     setMessages(prev => [...prev, userMessage])
@@ -67,63 +77,47 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
     setIsLoading(true)
 
     try {
-      // Streaming via /chat/stream (texte chunké)
-      abortRef.current?.abort()
-      abortRef.current = new AbortController()
-      const controller = abortRef.current
-
-      const response = await fetch(`${backendBaseUrl}/chat/stream`, {
+      // Appel synchrone sans streaming
+      const response = await fetch(`${backendBaseUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage.content,
           business_type: selectedBusiness,
-          conversation_history: messages.slice(-6).map(m => ({ role: m.type, content: m.content }))
-        }),
-        signal: controller.signal
+          conversation_history: messages.slice(-6).map(m => ({ 
+            role: m.type === 'user' ? 'user' : 'assistant', 
+            content: m.content 
+          }))
+        })
       })
 
-      if (!response.ok || !response.body) {
+      if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Erreur ${response.status}: ${errorText}`)
       }
 
-      // Placeholder assistant message to append chunks
-      const assistantId = (Date.now() + 1).toString()
-      setMessages(prev => [...prev, {
-        id: assistantId,
+      const data = await response.json()
+      
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: '',
+        content: data.response || '❌ Pas de réponse',
         timestamp: new Date(),
-        businessContext: `Expert ${selectedBusiness.replace('_', ' ')}`
-      }])
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
-      let done = false
-      let buffer = ''
-      while (!done) {
-        const { value, done: doneRead } = await reader.read()
-        done = doneRead
-        if (value) {
-          buffer += decoder.decode(value, { stream: true })
-          // Split on [DONE] marker if present
-          const parts = buffer.split('[DONE]')
-          const text = parts[0]
-          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: text } : m))
-          if (parts.length > 1) break
-        }
+        businessContext: data.business_context || `Expert ${selectedBusiness.replace('_', ' ')}`,
+        sources: data.sources || []
       }
 
+      setMessages(prev => [...prev, assistantMessage])
+
     } catch (error: any) {
-      if (error?.name === 'AbortError') return
       console.error('Erreur chat:', error)
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: '❌ Une erreur s\'est produite. Veuillez réessayer.',
         timestamp: new Date(),
-        businessContext: 'Système'
+        businessContext: 'Système',
+        sources: []
       }
       setMessages(prev => [...prev, errorMessage])
       toast.error('Erreur de communication')
@@ -195,7 +189,18 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
                     )}
                     
                     <div className="prose prose-invert prose-sm max-w-none">
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      {message.type === 'assistant' && message.sources && message.sources.length > 0 ? (
+                        <MessageWithCitations
+                          content={message.content}
+                          sources={message.sources}
+                          onViewDocument={(source) => {
+                            setSelectedSource(source)
+                            setIsModalOpen(true)
+                          }}
+                        />
+                      ) : (
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      )}
                     </div>
                     
                     <div className="flex items-center justify-between mt-2">
@@ -265,27 +270,18 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
             </div>
           </div>
           
-          {isLoading ? (
-            <motion.button
-              onClick={stopStreaming}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="glass-button px-4 py-3 text-red-200 border-red-500 hover:bg-red-500/30 flex items-center gap-2"
-            >
-              <span>Stop</span>
-            </motion.button>
-          ) : (
-            <motion.button
-              onClick={sendMessage}
-              disabled={!input.trim()}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="btn-liquid px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">Envoyer</span>
-            </motion.button>
-          )}
+          <motion.button
+            onClick={sendMessage}
+            disabled={!input.trim() || isLoading}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="btn-liquid px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <Send className="w-4 h-4" />
+            <span className="hidden sm:inline">
+              {isLoading ? 'Envoi...' : 'Envoyer'}
+            </span>
+          </motion.button>
         </div>
         
         <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
@@ -296,6 +292,16 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
           <span>Maj+Entrée pour nouvelle ligne</span>
         </div>
       </div>
+
+      {/* Modal de prévisualisation de document */}
+      <DocumentModal
+        isOpen={isModalOpen}
+        source={selectedSource}
+        onClose={() => {
+          setIsModalOpen(false)
+          setSelectedSource(null)
+        }}
+      />
     </motion.div>
   )
 }

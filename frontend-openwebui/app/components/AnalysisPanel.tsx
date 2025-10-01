@@ -49,29 +49,32 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
     setIsLoading(true)
     setActiveAnalysis(analysisId)
 
+    // Créer un résultat placeholder pour le streaming
+    const resultId = Date.now().toString()
+    const placeholderResult: AnalysisResult = {
+      id: resultId,
+      title: `${analysisTypes.find(a => a.id === analysisId)?.name} - ${query}`,
+      content: '',
+      timestamp: new Date(),
+      type: analysisId,
+      sources: []
+    }
+
+    setResults(prev => [placeholderResult, ...prev])
+    setSelectedResult(placeholderResult)
+
     try {
-      // Mapping des endpoints
-      const endpointMap: { [key: string]: string } = {
-        'synthese_executive': 'synthesize',
-        'analyse_concurrentielle': 'analyze_competition', 
-        'veille_technologique': 'tech_watch',
-        'analyse_risques': 'risk_analysis',
-        'etude_marche': 'market_study'
-      }
-
-      const endpoint = endpointMap[analysisId]
-      if (!endpoint) {
-        throw new Error('Type d\'analyse non supporté')
-      }
-
-      const response = await fetch(`http://localhost:8003/${endpoint}`, {
+      // Utiliser l'endpoint backend /extended-analysis pour le streaming
+      const response = await fetch('http://localhost:8006/extended-analysis', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          business_type: selectedBusiness,
+          analysis_type: analysisId,
           query: query,
-          title: `${analysisTypes.find(a => a.id === analysisId)?.name} - ${query}`
+          title: placeholderResult.title
         })
       })
 
@@ -81,22 +84,27 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
 
       const data = await response.json()
       
-      const result: AnalysisResult = {
-        id: Date.now().toString(),
-        title: data.title || `Analyse ${analysisId}`,
+      // Mettre à jour le résultat avec les données complètes
+      const finalResult: AnalysisResult = {
+        id: resultId,
+        title: data.title || placeholderResult.title,
         content: data.content || 'Aucun contenu généré',
         timestamp: new Date(),
         type: analysisId,
         sources: data.sources || []
       }
 
-      setResults(prev => [result, ...prev])
-      setSelectedResult(result)
-      toast.success('Analyse terminée avec succès !')
+      setResults(prev => prev.map(r => r.id === resultId ? finalResult : r))
+      setSelectedResult(finalResult)
+      toast.success('✅ Analyse terminée avec succès !')
 
     } catch (error) {
       console.error('Erreur analyse:', error)
-      toast.error('Erreur lors de l\'analyse')
+      toast.error('❌ Erreur lors de l\'analyse')
+      
+      // Supprimer le résultat en cas d'erreur
+      setResults(prev => prev.filter(r => r.id !== resultId))
+      setSelectedResult(null)
     } finally {
       setIsLoading(false)
       setActiveAnalysis(null)

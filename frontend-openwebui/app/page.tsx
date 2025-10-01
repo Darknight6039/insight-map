@@ -117,7 +117,7 @@ export default function HomePage() {
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              Intelligence stratégique propulsée par l'IA avec design liquid glass immersif
+              Intelligence stratégique par IA. Rapports, chat expert et export PDF professionnel.
             </motion.p>
             
             {/* Business type selector */}

@@ -10,9 +10,10 @@ from typing import Optional, List, Dict
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from reportlab.lib.pagesizes import A4
@@ -24,17 +25,29 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 from reportlab.graphics import renderPDF
 from reportlab.graphics.shapes import Drawing
-from svglib.svglib import renderSVG
+try:
+    from svglib.svglib import svg2rlg
+except ImportError:
+    from svglib.svglib import renderSVG as svg2rlg
 from loguru import logger
 
 app = FastAPI(title="Enhanced Report Service", description="Export PDF avec logo Axial")
+
+# Configuration CORS pour permettre les requêtes depuis le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, spécifier les origines autorisées
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@postgres:5432/insight_db")
 AXIAL_LOGO_PATH = "/app/data/axial-logo2.svg"
 
-# Database setup
-engine = create_engine(DATABASE_URL)
+# Database setup avec lazy connection
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -47,15 +60,39 @@ class Report(Base):
     metadata_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Fallback: stockage en mémoire si DB indisponible
+in_memory_reports = {}
+db_available = False
+
+# Fonction d'initialisation DB (appelée au startup)
+def init_database():
+    global db_available
+    try:
+        Base.metadata.create_all(bind=engine)
+        # Test de connexion
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_available = True
+        logger.info("✅ PostgreSQL connecté - Stockage en base de données activé")
+    except Exception as e:
+        logger.warning(f"⚠️ PostgreSQL indisponible - Basculement sur stockage en mémoire: {e}")
+        db_available = False
+
+# Event de démarrage
+@app.on_event("startup")
+async def startup_event():
+    init_database()
 
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    if not db_available:
+        # Yield None pour satisfaire FastAPI Depends
+        yield None
+    else:
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
 
 # Pydantic models
 class GenerateReportPayload(BaseModel):
@@ -117,29 +154,48 @@ class AxialReportFormatter:
             leftIndent=10
         ))
         
-        # Style body moderne
+        # Style body moderne avec espacement amélioré
         self.styles.add(ParagraphStyle(
             name='AxialBody',
             parent=self.styles['Normal'],
             fontSize=11,
             textColor=colors.HexColor('#2d3748'),
             alignment=TA_JUSTIFY,
-            spaceBefore=6,
-            spaceAfter=6,
+            spaceBefore=8,
+            spaceAfter=8,
             leftIndent=20,
+            rightIndent=20,
+            leading=16,  # Interligne augmenté
             fontName='Helvetica'
         ))
         
-        # Style métadonnées
+        # Style métadonnées / Citations APA
         self.styles.add(ParagraphStyle(
             name='AxialMeta',
             parent=self.styles['Normal'],
             fontSize=9,
             textColor=colors.HexColor('#718096'),
             alignment=TA_LEFT,
-            spaceBefore=3,
-            spaceAfter=3,
-            fontName='Helvetica-Oblique'
+            spaceBefore=4,
+            spaceAfter=4,
+            leftIndent=30,
+            rightIndent=20,
+            fontName='Helvetica-Oblique',
+            backColor=colors.HexColor('#f7fafc')  # Fond légèrement gris
+        ))
+        
+        # Style pour listes à puces
+        self.styles.add(ParagraphStyle(
+            name='AxialBullet',
+            parent=self.styles['Normal'],
+            fontSize=11,
+            textColor=colors.HexColor('#2d3748'),
+            alignment=TA_LEFT,
+            spaceBefore=6,
+            spaceAfter=6,
+            leftIndent=35,
+            rightIndent=20,
+            fontName='Helvetica'
         ))
 
     def add_axial_header(self, canvas_obj, doc):
@@ -149,7 +205,7 @@ class AxialReportFormatter:
             if os.path.exists(AXIAL_LOGO_PATH):
                 try:
                     # Convertir SVG en Drawing
-                    drawing = renderSVG.renderSVG(AXIAL_LOGO_PATH)
+                    drawing = svg2rlg(AXIAL_LOGO_PATH)
                     if drawing:
                         # Redimensionner le logo
                         drawing.width = 80
@@ -190,14 +246,14 @@ class AxialReportFormatter:
         
         # Footer texte
         footer_text = "Rapport généré par Insight MVP - Intelligence Stratégique"
-        canvas_obj.drawCentredText(A4[0] / 2, 30, footer_text)
+        canvas_obj.drawCentredString(A4[0] / 2, 30, footer_text)
         
         # Ligne de séparation footer
         canvas_obj.setStrokeColor(colors.HexColor('#e2e8f0'))
         canvas_obj.line(50, 50, A4[0] - 50, 50)
 
     def parse_markdown_content(self, content: str) -> List:
-        """Parse le contenu markdown en éléments PDF"""
+        """Parse le contenu markdown en éléments PDF avec espacement amélioré"""
         elements = []
         lines = content.split('\n')
         
@@ -206,38 +262,60 @@ class AxialReportFormatter:
             line = lines[i].strip()
             
             if not line:
-                elements.append(Spacer(1, 6))
+                # Espacements augmentés pour meilleure lisibilité
+                elements.append(Spacer(1, 12))
             elif line.startswith('# '):
-                # Titre principal
+                # Titre principal avec espacement renforcé
                 title_text = line[2:].strip()
                 elements.append(Paragraph(title_text, self.styles['AxialTitle']))
                 elements.append(Spacer(1, 20))
             elif line.startswith('## '):
-                # Section avec émoji
+                # Section avec émoji - espacement renforcé
                 section_text = line[3:].strip()
+                elements.append(Spacer(1, 18))  # Avant
                 elements.append(Paragraph(section_text, self.styles['AxialSubtitle']))
-                elements.append(Spacer(1, 12))
+                elements.append(Spacer(1, 14))  # Après
             elif line.startswith('### '):
-                # Sous-section
+                # Sous-section - espacement amélioré
                 subsection_text = line[4:].strip()
+                elements.append(Spacer(1, 12))  # Avant
                 elements.append(Paragraph(subsection_text, self.styles['AxialSection']))
-                elements.append(Spacer(1, 8))
+                elements.append(Spacer(1, 10))  # Après
             elif line.startswith('---'):
-                # Séparateur
-                elements.append(Spacer(1, 20))
-                elements.append(Table([['']]), width=A4[0]-100)
-                table_style = TableStyle([
-                    ('LINEBELOW', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0'))
+                # Séparateur horizontal élégant
+                elements.append(Spacer(1, 24))
+                sep_table = Table([['']],  colWidths=[A4[0]-120])
+                sep_style = TableStyle([
+                    ('LINEBELOW', (0, 0), (-1, -1), 2, colors.HexColor('#cbd5e0'))
                 ])
-                elements[-1].setStyle(table_style)
-                elements.append(Spacer(1, 20))
+                sep_table.setStyle(sep_style)
+                elements.append(sep_table)
+                elements.append(Spacer(1, 24))
+            elif line.startswith('**') and line.endswith('**'):
+                # Texte en gras avec espacement
+                elements.append(Spacer(1, 8))
+                bold_text = line.replace('**', '').strip()
+                elements.append(Paragraph(f"<b>{bold_text}</b>", self.styles['AxialBody']))
+                elements.append(Spacer(1, 6))
             elif line.startswith('['):
-                # Référence
+                # Références/Citations APA
+                elements.append(Spacer(1, 4))
                 elements.append(Paragraph(line, self.styles['AxialMeta']))
+                elements.append(Spacer(1, 4))
+            elif line.startswith('- ') or line.startswith('* '):
+                # Listes à puces avec style dédié
+                list_text = line[2:].strip()
+                elements.append(Paragraph(f"• {list_text}", self.styles['AxialBullet']))
+                elements.append(Spacer(1, 6))
+            elif line.startswith('|'):
+                # Tableau markdown (basique)
+                # On ignore pour l'instant, mais on ajoute un spacer
+                elements.append(Spacer(1, 4))
             else:
-                # Texte normal
+                # Texte normal avec espacement intelligent
                 if line:
                     elements.append(Paragraph(line, self.styles['AxialBody']))
+                    elements.append(Spacer(1, 8))
             
             i += 1
         
@@ -327,64 +405,104 @@ formatter = AxialReportFormatter()
 def generate_report(payload: GenerateReportPayload, db: Session = Depends(get_db)):
     """Génère et stocke un rapport avec structure standardisée"""
     try:
-        # Créer le rapport en DB
-        db_report = Report(
-            title=payload.title,
-            content=payload.content,
-            analysis_type=payload.analysis_type,
-            metadata_json=json.dumps(payload.metadata or {})
-        )
-        
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-        
-        logger.info(f"Rapport généré: {db_report.id} - {payload.title}")
-        
-        return ReportResponse(
-            id=db_report.id,
-            title=db_report.title,
-            analysis_type=db_report.analysis_type,
-            created_at=db_report.created_at.isoformat(),
-            metadata=payload.metadata or {}
-        )
+        if db_available and db:
+            # Stockage en base de données
+            db_report = Report(
+                title=payload.title,
+                content=payload.content,
+                analysis_type=payload.analysis_type,
+                metadata_json=json.dumps(payload.metadata or {})
+            )
+            
+            db.add(db_report)
+            db.commit()
+            db.refresh(db_report)
+            
+            logger.info(f"✅ Rapport généré (DB): {db_report.id} - {payload.title}")
+            
+            return ReportResponse(
+                id=db_report.id,
+                title=db_report.title,
+                analysis_type=db_report.analysis_type,
+                created_at=db_report.created_at.isoformat(),
+                metadata=payload.metadata or {}
+            )
+        else:
+            # Fallback: Stockage en mémoire
+            report_id = len(in_memory_reports) + 1
+            report_data = {
+                "id": report_id,
+                "title": payload.title,
+                "content": payload.content,
+                "analysis_type": payload.analysis_type,
+                "metadata": payload.metadata or {},
+                "created_at": datetime.utcnow()
+            }
+            in_memory_reports[report_id] = report_data
+            
+            logger.info(f"⚠️ Rapport généré (Mémoire): {report_id} - {payload.title}")
+            
+            return ReportResponse(
+                id=report_id,
+                title=payload.title,
+                analysis_type=payload.analysis_type,
+                created_at=report_data["created_at"].isoformat(),
+                metadata=payload.metadata or {}
+            )
         
     except Exception as e:
         logger.error(f"Erreur génération rapport: {e}")
-        db.rollback()
+        if db and db_available:
+            db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/export/{report_id}")
 def export_axial_pdf(report_id: int, db: Session = Depends(get_db)):
     """Export PDF avec logo Axial et identité visuelle"""
     try:
-        # Récupérer le rapport
-        report = db.query(Report).filter(Report.id == report_id).first()
-        if not report:
-            raise HTTPException(status_code=404, detail="Rapport non trouvé")
-        
-        # Parser métadonnées
+        report_data = None
         metadata = {}
-        if report.metadata_json:
-            try:
-                metadata = json.loads(report.metadata_json)
-            except:
-                pass
+        
+        if db_available and db:
+            # Récupérer depuis DB
+            report = db.query(Report).filter(Report.id == report_id).first()
+            if not report:
+                raise HTTPException(status_code=404, detail="Rapport non trouvé en DB")
+            
+            report_data = {
+                "title": report.title,
+                "content": report.content,
+                "analysis_type": report.analysis_type
+            }
+            
+            # Parser métadonnées
+            if report.metadata_json:
+                try:
+                    metadata = json.loads(report.metadata_json)
+                except:
+                    pass
+        else:
+            # Récupérer depuis mémoire
+            if report_id not in in_memory_reports:
+                raise HTTPException(status_code=404, detail="Rapport non trouvé en mémoire")
+            
+            report_data = in_memory_reports[report_id]
+            metadata = report_data.get("metadata", {})
         
         # Générer PDF Axial
         pdf_bytes = formatter.create_axial_pdf(
-            title=report.title,
-            content=report.content,
-            analysis_type=report.analysis_type,
+            title=report_data["title"],
+            content=report_data["content"],
+            analysis_type=report_data.get("analysis_type", ""),
             sources=metadata.get('sources', []),
             metadata=metadata
         )
         
         # Nom de fichier
-        safe_title = "".join(c for c in report.title if c.isalnum() or c in (' ', '-', '_')).strip()
-        filename = f"axial_rapport_{report.id}_{safe_title[:30]}.pdf"
+        safe_title = "".join(c for c in report_data["title"] if c.isalnum() or c in (' ', '-', '_')).strip()
+        filename = f"axial_rapport_{report_id}_{safe_title[:30]}.pdf"
         
-        logger.info(f"Export PDF Axial: {filename}")
+        logger.info(f"✅ Export PDF Axial: {filename}")
         
         return StreamingResponse(
             BytesIO(pdf_bytes),
@@ -392,6 +510,8 @@ def export_axial_pdf(report_id: int, db: Session = Depends(get_db)):
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erreur export PDF: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -399,18 +519,32 @@ def export_axial_pdf(report_id: int, db: Session = Depends(get_db)):
 @app.get("/reports")
 def list_reports(db: Session = Depends(get_db)):
     """Liste des rapports générés"""
-    reports = db.query(Report).order_by(Report.created_at.desc()).limit(50).all()
-    
-    return [{
-        "id": r.id,
-        "title": r.title,
-        "analysis_type": r.analysis_type,
-        "created_at": r.created_at.isoformat()
-    } for r in reports]
+    if db_available and db:
+        reports = db.query(Report).order_by(Report.created_at.desc()).limit(50).all()
+        return [{
+            "id": r.id,
+            "title": r.title,
+            "analysis_type": r.analysis_type,
+            "created_at": r.created_at.isoformat()
+        } for r in reports]
+    else:
+        # Retourner depuis mémoire
+        return [{
+            "id": r["id"],
+            "title": r["title"],
+            "analysis_type": r.get("analysis_type", ""),
+            "created_at": r["created_at"].isoformat()
+        } for r in sorted(in_memory_reports.values(), key=lambda x: x["created_at"], reverse=True)]
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "service": "enhanced-report-service", "features": ["axial_logo", "standardized_format"]}
+    return {
+        "status": "healthy", 
+        "service": "enhanced-report-service", 
+        "features": ["axial_logo", "standardized_format"],
+        "database": "connected" if db_available else "in-memory-fallback",
+        "reports_count": len(in_memory_reports) if not db_available else "db"
+    }
 
 if __name__ == "__main__":
     import uvicorn
