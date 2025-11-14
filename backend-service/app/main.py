@@ -15,7 +15,7 @@ from loguru import logger
 from importlib import metadata
 from app.business_prompts import get_business_prompt, get_available_business_types, get_business_type_display_name
 
-# Import OpenAI
+# Import OpenAI (compatible with Perplexity API)
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
@@ -34,9 +34,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# Configuration - Perplexity API
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
+PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")  # Modèle Perplexity par défaut
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 VECTOR_SERVICE_URL = "http://vector-service:8002"
+DOCUMENT_SERVICE_URL = "http://document-service:8001"
+
+# Cache pour les métadonnées des documents
+_document_metadata_cache = {}
 
 # Modèles Pydantic
 class BusinessAnalysisRequest(BaseModel):
@@ -65,6 +71,31 @@ class ChatResponse(BaseModel):
     sources: List[Dict]
     metadata: Dict
     timestamp: str
+
+def get_document_metadata(doc_id: int) -> Optional[Dict]:
+    """Récupère les métadonnées réelles d'un document depuis le document-service"""
+    # Vérifier le cache d'abord
+    if doc_id in _document_metadata_cache:
+        return _document_metadata_cache[doc_id]
+    
+    try:
+        response = requests.get(
+            f"{DOCUMENT_SERVICE_URL}/document/{doc_id}",
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            metadata = response.json()
+            # Mettre en cache
+            _document_metadata_cache[doc_id] = metadata
+            return metadata
+        else:
+            logger.warning(f"Failed to get document metadata for doc_id={doc_id}: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error fetching document metadata for doc_id={doc_id}: {e}")
+        return None
 
 def search_documents_safe(query: str, top_k: int = 10) -> List[Dict]:
     """Recherche vectorielle avec gestion d'erreurs robuste"""
@@ -102,29 +133,65 @@ def enrich_source_with_apa(doc: Dict, index: int) -> Dict:
     doc_id = doc.get("doc_id", "N/A")
     text = str(doc.get("text", ""))
     score = doc.get("score", 0)
+    segment_index = doc.get("segment_index", 0)
     
-    # Extraction métadonnées intelligentes (à améliorer avec vraies métadonnées)
-    # Pour l'instant, génération basée sur doc_id
-    year = 2024
-    author = "Axial Research"
-    title = f"Document d'analyse stratégique #{doc_id}"
-    page = (doc_id % 50) + 1 if isinstance(doc_id, int) else 1
+    # Récupérer les vraies métadonnées du document
+    metadata = None
+    if isinstance(doc_id, int):
+        metadata = get_document_metadata(doc_id)
     
-    # Détermine le type de document basé sur le contenu
-    if "marché" in text.lower() or "market" in text.lower():
-        doc_type = "Rapport de marché"
-        author = "Axial Market Intelligence"
-    elif "tech" in text.lower() or "digital" in text.lower():
-        doc_type = "Veille technologique"
-        author = "Axial Tech Watch"
-    elif "risque" in text.lower() or "risk" in text.lower():
-        doc_type = "Analyse de risques"
-        author = "Axial Risk Assessment"
+    # Utiliser les vraies métadonnées si disponibles
+    if metadata:
+        filename = metadata.get("filename", "Document inconnu")
+        title = metadata.get("title", filename)
+        upload_date = metadata.get("upload_date", "")
+        pages_count = metadata.get("pages_count", 0)
+        
+        # Extraire l'année de la date d'upload
+        try:
+            year = datetime.fromisoformat(upload_date.replace('Z', '+00:00')).year if upload_date else 2024
+        except:
+            year = 2024
+        
+        # Calculer la page approximative basée sur le segment
+        page = min(segment_index + 1, pages_count) if pages_count > 0 else segment_index + 1
+        
+        # Déterminer l'auteur et le type basés sur le nom du fichier et le contenu
+        if "study" in filename.lower() or "étude" in filename.lower():
+            author = "Département Études et Recherche"
+            doc_type = "Étude de marché"
+        elif "report" in filename.lower() or "rapport" in filename.lower():
+            author = "Direction Stratégie"
+            doc_type = "Rapport stratégique"
+        elif "analysis" in filename.lower() or "analyse" in filename.lower():
+            author = "Équipe Analyse"
+            doc_type = "Analyse sectorielle"
+        else:
+            # Détermine le type basé sur le contenu
+            if "marché" in text.lower() or "market" in text.lower():
+                author = "Axial Market Intelligence"
+                doc_type = "Rapport de marché"
+            elif "tech" in text.lower() or "digital" in text.lower():
+                author = "Axial Tech Watch"
+                doc_type = "Veille technologique"
+            elif "risque" in text.lower() or "risk" in text.lower():
+                author = "Axial Risk Assessment"
+                doc_type = "Analyse de risques"
+            else:
+                author = "Axial Intelligence"
+                doc_type = "Document d'analyse"
+        
+        # Format APA: Auteur. (Année). Titre. Type, p. page.
+        apa_citation = f"{author}. ({year}). {title}. {doc_type}, p. {page}."
+        
     else:
+        # Fallback sur les métadonnées génériques si pas de metadata disponible
+        year = 2024
+        author = "Axial Research"
+        title = f"Document d'analyse stratégique #{doc_id}"
+        page = (doc_id % 50) + 1 if isinstance(doc_id, int) else 1
         doc_type = "Document interne"
-    
-    # Format APA: Auteur. (Année). Titre. Type, p. page.
-    apa_citation = f"{author}. ({year}). {title}. {doc_type}, p. {page}."
+        apa_citation = f"{author}. ({year}). {title}. {doc_type}, p. {page}."
     
     return {
         "id": index,
@@ -387,50 +454,105 @@ Minimum 5000 mots. Citer [Réf. X] pour données factuelles."""
     
     return prompt_templates.get(business_type, prompt_templates["finance_banque"])
 
-def call_openai_safe(prompt: str, business_type: str) -> str:
-    """Appel OpenAI sécurisé avec gestion d'erreurs complète"""
+def call_perplexity_safe(prompt: str, business_type: str, rag_context: str = "") -> str:
+    """Appel Perplexity sécurisé avec RAG interne et recherche web"""
     try:
-        if not OPENAI_API_KEY or OPENAI_API_KEY == "":
-            return "⚠️ **Configuration OpenAI requise**\n\nVeuillez configurer la variable OPENAI_API_KEY dans votre fichier .env"
+        if not PERPLEXITY_API_KEY or PERPLEXITY_API_KEY == "":
+            return "⚠️ **Configuration Perplexity requise**\n\nVeuillez configurer la variable PERPLEXITY_API_KEY dans votre fichier .env"
         
-        # Vérifier OpenAI
+        # Vérifier OpenAI SDK (compatible Perplexity)
         if not OPENAI_AVAILABLE:
             return "❌ **Module OpenAI manquant**\n\nVeuillez installer: pip install openai"
         
-        # System prompts par métier
+        # System prompts avec instructions de citation APA + URLs (style Perplexity)
         system_prompts = {
-            "finance_banque": """Tu es un consultant senior McKinsey spécialisé en stratégie bancaire. 
+            "finance_banque": """Tu es un consultant senior McKinsey spécialisé en stratégie bancaire utilisant Perplexity AI. 
                               Génère des rapports structurés avec analyses quantifiées et recommandations actionnables.
-                              Utilise exclusivement les données des documents fournis avec références [Réf. X].""",
                               
-            "tech_digital": """Tu es un consultant BCG expert en transformation digitale. 
+                              RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
+                              - Utilise ta recherche web native Perplexity
+                              - Cite TOUTES les sources avec [1], [2], [3], etc. après chaque information
+                              - En fin de réponse, ajoute une section "## 📚 Sources" avec bibliographie APA complète
+                              - Format: [numéro] Auteur/Organisation. (Année). Titre. URL_complète_cliquable
+                              - Exemple inline: "Le marché croît de 15% [1]"
+                              - Exemple source: "[1] INSEE. (2024). Croissance économique française. https://www.insee.fr/rapport-2024"
+                              - Minimum 5 sources variées et récentes (moins de 2 ans)""",
+                              
+            "tech_digital": """Tu es un consultant BCG expert en transformation digitale utilisant Perplexity AI. 
                              Génère des analyses techniques détaillées avec business case et ROI.
-                             Base tes analyses sur les documents fournis avec références [Réf. X].""",
                              
-            "retail_commerce": """Tu es un consultant Bain expert en retail et commerce. 
+                             RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
+                             - Recherche web native Perplexity pour données actuelles
+                             - Citations [1], [2], [3]... immédiatement après chaque fait
+                             - Section finale "## 📚 Sources" au format APA avec URLs
+                             - Chaque source: [numéro] Source. (Année). Titre. URL_complète
+                             - Minimum 5 sources tech récentes et vérifiables""",
+                             
+            "retail_commerce": """Tu es un consultant Bain expert en retail et commerce utilisant Perplexity AI. 
                                 Génère des analyses avec insights consommateurs et recommandations opérationnelles.
-                                Utilise les documents fournis avec références [Réf. X]."""
+                                
+                                RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
+                                - Utilise recherche web Perplexity pour données marché
+                                - Cite systématiquement avec [1], [2], [3]... après chaque donnée
+                                - Bibliographie finale "## 📚 Sources" format APA + URLs
+                                - Format: [numéro] Organisation. (Année). Titre. URL_cliquable
+                                - Minimum 5 sources retail/e-commerce récentes"""
         }
         
         system_prompt = system_prompts.get(business_type, system_prompts["finance_banque"])
         
-        # Client OpenAI avec paramètres explicites
+        # Prompt enrichi avec instructions explicites de citation web
+        enhanced_prompt = f"""{prompt}
+
+═══════════════════════════════════════════════════════════════
+
+INSTRUCTIONS DE RECHERCHE ET CITATION (STYLE PERPLEXITY APP):
+
+📌 ÉTAPE 1 - RECHERCHE WEB:
+- Utilise tes capacités de recherche web native Perplexity
+- Cherche les informations les plus récentes et pertinentes
+- Privilégie sources officielles, études, rapports institutionnels
+
+📌 ÉTAPE 2 - RÉDACTION AVEC CITATIONS:
+- Après CHAQUE information factuelle, ajoute [numéro]
+- Ne jamais affirmer sans citer
+- Exemple: "Le marché fintech français atteint 9 milliards € [1] avec 1000+ startups [2]"
+
+📌 ÉTAPE 3 - BIBLIOGRAPHIE FINALE:
+- Section "## 📚 Sources" en fin de réponse
+- Format APA strict: [numéro] Auteur/Organisation. (Année). Titre complet. URL_complète
+- URLs doivent être des liens réels et cliquables
+- Minimum 5 sources, maximum 15 sources
+- Sources variées: institutionnelles, académiques, presse spécialisée
+
+EXEMPLE DE FORMAT ATTENDU:
+
+"Le secteur bancaire français compte 300 établissements [1] générant 85 milliards de revenus [2]."
+
+## 📚 Sources
+[1] ACPR. (2024). Panorama des établissements bancaires français. https://acpr.banque-france.fr/rapport-2024
+[2] FBF. (2024). Rapport annuel du secteur bancaire. https://fbf.fr/publications/rapport-annuel-2024
+
+Réponds maintenant en utilisant la recherche web Perplexity et en citant TOUTES tes sources."""
+        
+        # Client Perplexity (compatible OpenAI SDK)
         try:
             client = OpenAI(
-                api_key=OPENAI_API_KEY,
+                api_key=PERPLEXITY_API_KEY,
+                base_url=PERPLEXITY_BASE_URL,
                 timeout=300.0  # 5 minutes max pour rapports longs
             )
             
             # Vérifier taille prompt
-            if len(prompt) > 15000:
-                logger.warning(f"Prompt très long ({len(prompt)} chars), troncature appliquée")
-                prompt = prompt[:15000] + "\n\n[...Prompt tronqué pour limites techniques. Continuer l'analyse avec les éléments disponibles...]"
+            if len(enhanced_prompt) > 15000:
+                logger.warning(f"Prompt très long ({len(enhanced_prompt)} chars), troncature appliquée")
+                enhanced_prompt = enhanced_prompt[:15000] + "\n\n[...Prompt tronqué pour limites techniques. Continuer l'analyse avec les éléments disponibles...]"
             
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=PERPLEXITY_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": enhanced_prompt}
                 ],
                 temperature=0.3,
                 max_tokens=8000
@@ -439,11 +561,11 @@ def call_openai_safe(prompt: str, business_type: str) -> str:
             return response.choices[0].message.content
             
         except Exception as api_error:
-            logger.error(f"OpenAI API error: {api_error}")
-            return f"❌ **Erreur API OpenAI**\n\n{str(api_error)[:300]}\n\nVérifiez votre clé API et votre quota."
+            logger.error(f"Perplexity API error: {api_error}")
+            return f"❌ **Erreur API Perplexity**\n\n{str(api_error)[:300]}\n\nVérifiez votre clé API et votre quota."
         
     except Exception as e:
-        logger.error(f"Critical error in OpenAI call: {e}")
+        logger.error(f"Critical error in Perplexity call: {e}")
         return f"❌ **Erreur critique**\n\n{str(e)[:300]}"
 
 async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None) -> AnalysisResponse:
@@ -461,8 +583,8 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
         # 3. Création prompt optimisé
         prompt = create_optimized_prompt(business_type, analysis_type, query, context)
         
-        # 4. Appel OpenAI sécurisé
-        content = call_openai_safe(prompt, business_type)
+        # 4. Appel Perplexity sécurisé avec RAG
+        content = call_perplexity_safe(prompt, business_type, rag_context=context)
         
         # 5. Construction réponse avec sources enrichies APA
         enriched_sources = [enrich_source_with_apa(d, i+1) for i, d in enumerate(documents)]
@@ -478,7 +600,8 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
                 "business_type": business_type,
                 "documents_found": len(documents),
                 "analysis_length": "extended_report",
-                "model": "gpt-4o-mini",
+                "model": PERPLEXITY_MODEL,
+                "provider": "Perplexity AI",
                 "max_tokens": 8000,
                 "status": "success",
                 "citation_format": "APA"
@@ -505,56 +628,45 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
         )
 
 async def generate_chat_response_safe(message: str, business_type: str = None, history: List[Dict] = None) -> ChatResponse:
-    """Chat avec gestion d'erreurs robuste"""
+    """Chat avec Perplexity uniquement (pas de RAG interne)"""
     try:
-        # 1. Recherche documents
-        documents = search_documents_safe(message, top_k=5)
-        context = format_context_safe(documents)
-        
-        # 2. Construction prompt chat
+        # 1. Pas de recherche documents - Perplexity uniquement
         business_context = get_business_type_display_name(business_type) if business_type else "Généraliste"
         
-        chat_prompt = f"""Tu es un assistant expert spécialisé {business_context}.
-
-CONTEXTE DOCUMENTAIRE:
-{context}
+        # 2. Construction prompt pour Perplexity avec citations APA
+        chat_prompt = f"""Tu es un assistant expert spécialisé {business_context} utilisant Perplexity AI.
 
 HISTORIQUE CONVERSATION:
 {history[-3:] if history else "Nouvelle conversation"}
 
 QUESTION: {message}
 
-INSTRUCTIONS DE CITATION (FORMAT ACADÉMIQUE):
-- Utilise les citations inline avec numéros exposants: [¹], [²], [³], etc.
-- TOUJOURS citer la source immédiatement après chaque information factuelle
-- En fin de réponse, ajoute une section "## 📚 Sources" avec bibliographie APA complète
-- Exemple de citation inline: "Le marché croît de 3% [¹]"
-- Format bibliographie: [1] Auteur. (Année). Titre. Type, p. page.
+INSTRUCTIONS DE RÉPONSE (STYLE PERPLEXITY APP):
+✓ Réponds de manière concise et professionnelle (2-3 paragraphes)
+✓ Utilise ta recherche web native Perplexity pour des informations actuelles
+✓ CITE SYSTÉMATIQUEMENT avec [1], [2], [3]... après chaque information factuelle
+✓ Exemple: "Le secteur croît de 12% [1] avec 500 entreprises [2]"
+✓ En fin de réponse, ajoute "## 📚 Sources" avec format APA + URLs cliquables
+✓ Format source: [numéro] Auteur. (Année). Titre. URL_complète
+✓ Minimum 3 sources vérifiables
 
-STRUCTURE DE RÉPONSE REQUISE:
-1. Réponse concise et professionnelle (2-3 paragraphes max)
-2. Informations factuelles avec citations [¹][²][³]
-3. Section "## 📚 Sources" en fin avec références APA
-
-Réponds de manière structurée et professionnelle en te basant sur les documents fournis.
+Réponds maintenant avec recherche web Perplexity et citations complètes.
 """
 
-        # 3. Appel OpenAI sécurisé
-        response_content = call_openai_safe(chat_prompt, business_type or "finance_banque")
-        
-        # Enrichir sources avec APA
-        enriched_sources = [enrich_source_with_apa(d, i+1) for i, d in enumerate(documents[:5])]
+        # 3. Appel Perplexity direct (pas de RAG interne)
+        response_content = call_perplexity_safe(chat_prompt, business_type or "finance_banque", rag_context="")
         
         return ChatResponse(
             response=response_content,
             business_context=business_context,
-            sources=enriched_sources,
+            sources=[],  # Pas de sources RAG internes
             metadata={
                 "message": message,
                 "business_type": business_type,
-                "documents_found": len(documents),
-                "model": "gpt-4o-mini",
-                "citation_format": "APA"
+                "documents_found": 0,  # RAG désactivé
+                "model": PERPLEXITY_MODEL,
+                "provider": "Perplexity AI",
+                "mode": "perplexity_web_only"
             },
             timestamp=datetime.now().isoformat()
         )
@@ -575,11 +687,13 @@ def health():
     """Health check avec diagnostics étendus"""
     return {
         "status": "healthy", 
-        "service": "backend-intelligence-fixed",
-        "openai_configured": bool(OPENAI_API_KEY),
-        "vector_service": VECTOR_SERVICE_URL,
+        "service": "backend-intelligence-perplexity",
+        "perplexity_configured": bool(PERPLEXITY_API_KEY),
+        "perplexity_model": PERPLEXITY_MODEL,
+        "mode": "perplexity_web_only",
+        "rag_internal": "disabled",
         "business_types": get_available_business_types(),
-        "version": "1.0-robust"
+        "version": "3.0-perplexity-web-only"
     }
 
 @app.get("/business-types")
@@ -633,40 +747,41 @@ async def chat_endpoint(request: ChatRequest):
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
-    """Streaming de la réponse du chat (texte brut chunké, compatible fetch streaming)."""
+    """Streaming de la réponse du chat avec Perplexity uniquement (pas de RAG interne)."""
     async def token_generator():
         try:
-            # 1) RAG rapide (synchrone)
-            documents = search_documents_safe(request.message, top_k=5)
-            context = format_context_safe(documents)
+            # 1) Pas de RAG interne - Perplexity uniquement avec citations
             business_context = get_business_type_display_name(request.business_type) if request.business_type else "Généraliste"
-            chat_prompt = f"""Tu es un assistant expert spécialisé {business_context}.
-
-CONTEXTE DOCUMENTAIRE:
-{context}
+            chat_prompt = f"""Tu es un assistant expert spécialisé {business_context} utilisant Perplexity AI.
 
 HISTORIQUE CONVERSATION:
 {request.conversation_history[-3:] if request.conversation_history else "Nouvelle conversation"}
 
 QUESTION: {request.message}
 
-Réponds de manière concise et professionnelle en te basant sur les documents fournis.
-Si la question dépasse ton domaine d'expertise, oriente vers le bon spécialiste.
-Cite [Réf. X] pour les informations factuelles.
+INSTRUCTIONS DE RÉPONSE (STYLE PERPLEXITY APP):
+✓ Réponds de manière concise et professionnelle
+✓ Recherche web native Perplexity pour informations actuelles
+✓ CITE SYSTÉMATIQUEMENT: [1], [2], [3]... après chaque fait
+✓ En fin: "## 📚 Sources" avec format APA + URLs cliquables
+✓ Format: [numéro] Auteur. (Année). Titre. URL_complète
+✓ Minimum 3 sources vérifiables et récentes
+
+Réponds avec recherche web Perplexity et citations complètes.
 """
 
-            # 2) Streaming OpenAI
-            if not OPENAI_API_KEY or not OPENAI_AVAILABLE:
+            # 2) Streaming Perplexity
+            if not PERPLEXITY_API_KEY or not OPENAI_AVAILABLE:
                 # Fallback non‑bloquant
-                yield "Le streaming nécessite une configuration OPENAI_API_KEY.\n"
+                yield "Le streaming nécessite une configuration PERPLEXITY_API_KEY.\n"
                 yield "[DONE]"
                 return
 
-            client = OpenAI(api_key=OPENAI_API_KEY, timeout=300.0)
+            client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url=PERPLEXITY_BASE_URL, timeout=300.0)
             stream = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=PERPLEXITY_MODEL,
                 messages=[
-                    {"role": "system", "content": f"Assistant spécialisé {business_context}."},
+                    {"role": "system", "content": f"Assistant spécialisé {business_context}. Utilise les documents fournis en priorité."},
                     {"role": "user", "content": chat_prompt}
                 ],
                 temperature=0.3,
@@ -697,28 +812,29 @@ Cite [Réf. X] pour les informations factuelles.
     }
     return StreamingResponse(token_generator(), media_type="text/plain", headers=headers)
 
-@app.get("/test-openai")
-async def test_openai():
-    """Test de connectivité OpenAI"""
+@app.get("/test-perplexity")
+async def test_perplexity():
+    """Test de connectivité Perplexity"""
     try:
-        if not OPENAI_API_KEY:
-            return {"status": "error", "message": "OPENAI_API_KEY not configured"}
+        if not PERPLEXITY_API_KEY:
+            return {"status": "error", "message": "PERPLEXITY_API_KEY not configured"}
         
         client = OpenAI(
-            api_key=OPENAI_API_KEY,
-            timeout=300.0  # 5 minutes max
+            api_key=PERPLEXITY_API_KEY,
+            base_url=PERPLEXITY_BASE_URL,
+            timeout=300.0
         )
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=PERPLEXITY_MODEL,
             messages=[{"role": "user", "content": "Hello, test simple"}],
             max_tokens=10
         )
         
         return {
             "status": "success", 
-            "message": "OpenAI API functional",
-            "model": "gpt-4o-mini",
+            "message": "Perplexity API functional",
+            "model": PERPLEXITY_MODEL,
             "response": response.choices[0].message.content
         }
         
@@ -731,8 +847,8 @@ async def diagnostics():
     
     diagnostics_result = {
         "timestamp": datetime.now().isoformat(),
-        "service": "backend-intelligence-fixed",
-        "version": "1.0-robust"
+        "service": "backend-intelligence-perplexity",
+        "version": "2.0-perplexity-rag"
     }
     
     # Versions des libs clés
@@ -758,23 +874,24 @@ async def diagnostics():
         if os.getenv(k)
     }
 
-    # Test OpenAI
+    # Test Perplexity
     try:
-        if OPENAI_API_KEY:
+        if PERPLEXITY_API_KEY:
             client = OpenAI(
-                api_key=OPENAI_API_KEY,
-                timeout=300.0  # 5 minutes max
+                api_key=PERPLEXITY_API_KEY,
+                base_url=PERPLEXITY_BASE_URL,
+                timeout=300.0
             )
             test_response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=PERPLEXITY_MODEL,
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5
             )
-            diagnostics_result["openai"] = {"status": "✅ Functional", "model": "gpt-4o-mini"}
+            diagnostics_result["perplexity"] = {"status": "✅ Functional", "model": PERPLEXITY_MODEL}
         else:
-            diagnostics_result["openai"] = {"status": "❌ Not configured", "model": None}
+            diagnostics_result["perplexity"] = {"status": "❌ Not configured", "model": None}
     except Exception as e:
-        diagnostics_result["openai"] = {"status": f"❌ Error: {str(e)[:100]}", "model": "gpt-4o-mini"}
+        diagnostics_result["perplexity"] = {"status": f"❌ Error: {str(e)[:100]}", "model": PERPLEXITY_MODEL}
     
     # Test Vector Service
     try:

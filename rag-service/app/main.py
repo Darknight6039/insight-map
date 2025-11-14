@@ -19,7 +19,9 @@ from prompts.templates import (
 )
 
 VECTOR_URL = os.environ.get("VECTOR_URL", "http://vector-service:8002")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY")
+PERPLEXITY_MODEL = os.environ.get("PERPLEXITY_MODEL", "llama-3.1-sonar-large-128k-online")
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 BRAND_LOGO_PATH = os.environ.get("BRAND_LOGO_PATH", "/app/data/logo/logo.svg")
 
 app = FastAPI(title="RAG Service - Strategic Intelligence", version="0.1.0")
@@ -92,27 +94,36 @@ async def get_passages(query: str, top_k: int):
         return r.json()
 
 
-def call_openai(prompt: str, analysis_type: str = "general") -> str:
-    """Call OpenAI with specialized system prompts based on analysis type"""
-    if not OPENAI_API_KEY:
-        return f"[OpenAI API key not configured]\n\nAnalysis Type: {analysis_type}\n\n" + prompt[:500]
+def call_perplexity(prompt: str, analysis_type: str = "general") -> str:
+    """Call Perplexity AI with specialized system prompts and web search capabilities"""
+    if not PERPLEXITY_API_KEY:
+        return f"[Perplexity API key not configured]\n\nAnalysis Type: {analysis_type}\n\n" + prompt[:500]
     
-    # Specialized system prompts based on analysis type
+    # Specialized system prompts based on analysis type with RAG priority
     system_prompts = {
-        "synthese_executive": "Tu es un consultant senior en stratégie d'entreprise. Produis des synthèses exécutives claires et actionnables.",
-        "analyse_concurrentielle": "Tu es un expert en intelligence concurrentielle. Analyse les dynamiques de marché et identifie les positionnements stratégiques.",
-        "veille_technologique": "Tu es un expert en innovation technologique. Identifie les tendances tech émergentes et leurs implications business.",
-        "analyse_risques": "Tu es un expert en risk management. Effectue des analyses de risques méthodiques et propose des mesures de mitigation.",
-        "etude_marche": "Tu es un analyste marché senior. Réalise des études de marché approfondies avec projections et scénarios.",
-        "general": "Tu es un consultant senior en stratégie d'entreprise."
+        "synthese_executive": """Tu es un consultant senior en stratégie d'entreprise. Produis des synthèses exécutives claires et actionnables.
+PRIORITÉ: Base-toi d'abord sur les documents internes fournis [Réf. X], puis enrichis avec des données web récentes si nécessaire.""",
+        "analyse_concurrentielle": """Tu es un expert en intelligence concurrentielle. Analyse les dynamiques de marché et identifie les positionnements stratégiques.
+PRIORITÉ: Utilise les documents internes fournis [Réf. X] en premier lieu, complète avec des insights web si pertinent.""",
+        "veille_technologique": """Tu es un expert en innovation technologique. Identifie les tendances tech émergentes et leurs implications business.
+PRIORITÉ: Sources internes [Réf. X] d'abord, actualités tech récentes du web ensuite.""",
+        "analyse_risques": """Tu es un expert en risk management. Effectue des analyses de risques méthodiques et propose des mesures de mitigation.
+PRIORITÉ: Documents internes [Réf. X] comme base, informations web pour contexte actuel.""",
+        "etude_marche": """Tu es un analyste marché senior. Réalise des études de marché approfondies avec projections et scénarios.
+PRIORITÉ: Données internes [Réf. X] en priorité, statistiques web récentes en complément.""",
+        "general": """Tu es un consultant senior en stratégie d'entreprise.
+PRIORITÉ: Utilise d'abord les documents internes fournis [Réf. X], puis complète avec des données web."""
     }
     
     system_prompt = system_prompts.get(analysis_type, system_prompts["general"])
     
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(
+            api_key=PERPLEXITY_API_KEY,
+            base_url=PERPLEXITY_BASE_URL
+        )
         completion = client.chat.completions.create(
-            model="gpt-5-mini",
+            model=PERPLEXITY_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
@@ -122,36 +133,43 @@ def call_openai(prompt: str, analysis_type: str = "general") -> str:
         )
         return completion.choices[0].message.content
     except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
-        return f"[Erreur API OpenAI: {str(e)}]\n\nType d'analyse: {analysis_type}\n\nPrompt de fallback:\n{prompt[:500]}..."
+        logger.error(f"Perplexity API error: {e}")
+        return f"[Erreur API Perplexity: {str(e)}]\n\nType d'analyse: {analysis_type}\n\nPrompt de fallback:\n{prompt[:500]}..."
 
 
 async def perform_analysis(analysis_type: str, payload: AnalysisPayload) -> AnalysisResponse:
-    """Core analysis function used by all 5 analysis endpoints"""
+    """Core analysis function used by all 5 analysis endpoints - PERPLEXITY ONLY"""
     try:
-        # Get relevant passages from vector search
-        if payload.context_override:
-            passages = []  # Use provided context instead
-            context = payload.context_override
-        else:
-            passages = await get_passages(payload.query, payload.top_k or 8)
+        # MODE PERPLEXITY UNIQUEMENT - Pas de recherche vectorielle interne
+        passages = []  # Pas de RAG interne
         
-        # Build specialized prompt
-        prompt = build_analysis_prompt(analysis_type, payload.query, passages)
+        # Créer un prompt direct pour Perplexity (qui fera sa propre recherche web)
+        simple_prompt = f"""
+Analyse demandée : {analysis_type.replace('_', ' ').title()}
+
+Question : {payload.query}
+
+Instructions :
+- Utilise tes capacités de recherche web pour trouver les informations les plus récentes
+- Fournis une analyse détaillée et structurée
+- Cite tes sources avec des URLs quand possible
+- Format professionnel de cabinet de conseil
+"""
         
-        # Get AI analysis
-        analysis_content = call_openai(prompt, analysis_type)
+        # Get AI analysis with Perplexity (web search only)
+        analysis_content = call_perplexity(simple_prompt, analysis_type)
         
         # Build response
         response = AnalysisResponse(
             analysis_type=analysis_type,
             title=payload.title or f"Analyse {analysis_type.replace('_', ' ').title()}",
             content=analysis_content,
-            sources=passages,
+            sources=passages,  # Vide - Perplexity utilise ses propres sources web
             metadata={
                 "query": payload.query,
-                "passages_count": len(passages),
-                "top_k": payload.top_k or 8,
+                "passages_count": 0,
+                "top_k": 0,
+                "mode": "perplexity_web_only",
                 "used_context_override": bool(payload.context_override)
             },
             timestamp=datetime.utcnow()
@@ -166,7 +184,16 @@ async def perform_analysis(analysis_type: str, payload: AnalysisPayload) -> Anal
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "rag-service", "available_analyses": list(ANALYSIS_PROMPTS.keys())}
+    return {
+        "status": "ok", 
+        "service": "rag-service", 
+        "available_analyses": list(ANALYSIS_PROMPTS.keys()),
+        "ai_provider": "Perplexity AI",
+        "model": PERPLEXITY_MODEL,
+        "perplexity_configured": bool(PERPLEXITY_API_KEY),
+        "mode": "perplexity_web_only",
+        "rag_internal": "disabled"
+    }
 
 @app.get("/analysis_types")
 def get_analysis_types():
@@ -213,23 +240,24 @@ async def market_study(payload: EtudeMarchePayload):
 
 @app.post("/ask_question")
 async def ask_question(payload: AskPayload):
-    """Legacy endpoint - basic Q&A"""
-    passages = await get_passages(payload.query, payload.top_k or 5)
-    prompt = build_prompt(payload.query, passages)
-    answer = call_openai(prompt)
-    return {"answer": answer, "citations": passages}
+    """Legacy endpoint - basic Q&A - PERPLEXITY ONLY"""
+    # Mode Perplexity uniquement - pas de RAG interne
+    simple_prompt = f"Question: {payload.query}\n\nRéponds de manière détaillée avec tes capacités de recherche web."
+    answer = call_perplexity(simple_prompt)
+    return {"answer": answer, "citations": [], "mode": "perplexity_web_only"}
 
 @app.post("/generate_report")
 async def generate_report(payload: ReportPayload):
-    """Legacy endpoint - generate basic report"""
-    passages = await get_passages(payload.query, 8)
-    prompt = build_prompt(payload.query, passages)
-    answer = call_openai(prompt)
+    """Legacy endpoint - generate basic report - PERPLEXITY ONLY"""
+    # Mode Perplexity uniquement - pas de RAG interne
+    simple_prompt = f"Génère un rapport détaillé sur: {payload.query}\n\nUtilise tes capacités de recherche web pour des informations récentes."
+    answer = call_perplexity(simple_prompt)
     report = {
         "title": payload.title,
         "executive_summary": answer,
-        "citations": passages,
+        "citations": [],  # Perplexity cite ses propres sources web
         "brand": payload.brand or {"logo_path": BRAND_LOGO_PATH},
+        "mode": "perplexity_web_only"
     }
     return report
 
