@@ -222,9 +222,9 @@ class ReportFormatter:
             img_width, img_height = img.size
             logger.info(f"Watermark image loaded: {img_width}x{img_height}")
             
-            # Filigrane plus grand pour couvrir la page (70% de la largeur)
-            max_width = page_width * 0.7
-            max_height = page_height * 0.7
+            # Filigrane en pleine page (95% pour couvrir toute la page)
+            max_width = page_width * 0.95
+            max_height = page_height * 0.95
             
             # Calculer le ratio pour conserver les proportions
             width_ratio = max_width / img_width
@@ -240,8 +240,8 @@ class ReportFormatter:
             
             # Dessiner l'image en arrière-plan avec opacité réduite
             # Important: définir l'opacité AVANT de dessiner
-            canvas_obj.setFillAlpha(0.15)  # 15% d'opacité pour être visible mais discret
-            canvas_obj.setStrokeAlpha(0.15)
+            canvas_obj.setFillAlpha(0.12)  # 12% d'opacité pour couvrir sans gêner la lecture
+            canvas_obj.setStrokeAlpha(0.12)
             
             # Dessiner l'image en arrière-plan
             canvas_obj.drawImage(
@@ -448,28 +448,117 @@ class ReportFormatter:
         
         return sources
     
+    def _is_table_row(self, line):
+        """Détecte si une ligne est une ligne de tableau markdown"""
+        line = line.strip()
+        return line.startswith('|') and line.endswith('|') and line.count('|') >= 2
+    
+    def _parse_table(self, lines, start_idx):
+        """Parse un tableau markdown et retourne l'objet Table et l'index suivant"""
+        table_lines = []
+        i = start_idx
+        
+        # Collecter toutes les lignes du tableau
+        while i < len(lines) and self._is_table_row(lines[i]):
+            table_lines.append(lines[i])
+            i += 1
+        
+        if len(table_lines) < 2:  # Au moins en-tête + une ligne
+            return None, start_idx
+        
+        # Parser les lignes
+        table_data = []
+        for idx, line in enumerate(table_lines):
+            # Skip les lignes de séparation (|---|---|)
+            if idx == 1 and all(c in '|-: ' for c in line):
+                continue
+            
+            # Extraire les cellules
+            cells = [cell.strip() for cell in line.split('|')[1:-1]]
+            # Nettoyer le markdown dans les cellules
+            cells = [self._clean_markdown(cell) for cell in cells]
+            table_data.append(cells)
+        
+        if len(table_data) < 2:
+            return None, start_idx
+        
+        # Créer le tableau avec style professionnel
+        table = Table(table_data)
+        table_style = TableStyle([
+            # En-tête (première ligne)
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0052A5')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            
+            # Lignes du corps
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            
+            # Bordures
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0052A5')),
+            
+            # Padding
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            
+            # Alternance de couleur pour les lignes
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+        ])
+        table.setStyle(table_style)
+        
+        return table, i
+    
     def _add_content_sections(self, story, content):
         """Parse content and add structured sections with better markdown support"""
         lines = content.split('\n')
         current_section = []
         in_sources = False
         sources_found = []
+        i = 0
         
-        for line in lines:
+        while i < len(lines):
+            line = lines[i]
             line_stripped = line.strip()
             
             # Skip sources section (will be handled separately)
             if line_stripped.startswith('## 📚') or line_stripped.startswith('## Sources'):
                 in_sources = True
+                i += 1
                 continue
             
             if in_sources and line_stripped.startswith('['):
                 sources_found.append(line_stripped)
+                i += 1
                 continue  # Skip source citations in content
             
             # Si on rencontre une autre section majeure, on sort des sources
             if in_sources and line_stripped.startswith('## '):
                 in_sources = False
+            
+            # Détecter les tableaux
+            if self._is_table_row(line_stripped) and not in_sources:
+                # Ajouter le contenu en cours
+                if current_section:
+                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
+                    current_section = []
+                
+                # Parser et ajouter le tableau
+                table, next_idx = self._parse_table(lines, i)
+                if table:
+                    story.append(Spacer(1, 0.3*cm))
+                    story.append(table)
+                    story.append(Spacer(1, 0.3*cm))
+                    i = next_idx
+                    continue
                 
             if not line_stripped:
                 if current_section:
@@ -477,6 +566,7 @@ class ReportFormatter:
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 story.append(Spacer(1, 8))
+                i += 1
                 continue
             
             # Check for section headers (## Header)
@@ -522,6 +612,8 @@ class ReportFormatter:
             else:
                 if not in_sources:
                     current_section.append(line_stripped)
+            
+            i += 1
         
         # Add remaining content
         if current_section:
