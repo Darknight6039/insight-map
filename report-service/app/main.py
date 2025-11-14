@@ -150,7 +150,7 @@ class ReportFormatter:
         ))
         
         self.styles.add(ParagraphStyle(
-            name='BodyText',
+            name='CustomBodyText',
             parent=self.styles['Normal'],
             fontSize=10,
             fontName='Helvetica',
@@ -371,7 +371,7 @@ class ReportFormatter:
                 
             if not line_stripped:
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
                     current_section = []
                 story.append(Spacer(1, 8))
                 continue
@@ -380,7 +380,7 @@ class ReportFormatter:
             if line_stripped.startswith('##'):
                 # Add previous section content
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
                     current_section = []
                 
                 # Add new section header
@@ -392,7 +392,7 @@ class ReportFormatter:
             # Check for subsection headers (### or **)
             elif line_stripped.startswith('###') or (line_stripped.startswith('**') and line_stripped.endswith('**')):
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
                     current_section = []
                 
                 header_text = line_stripped.lstrip('#').strip('*').strip()
@@ -403,7 +403,7 @@ class ReportFormatter:
             # Check for bullet points
             elif line_stripped.startswith(('-', '•', '*')) and not line_stripped.startswith('**'):
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
                     current_section = []
                 
                 bullet_text = line_stripped.lstrip('-•*').strip()
@@ -415,7 +415,7 @@ class ReportFormatter:
         
         # Add remaining content
         if current_section:
-            story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+            story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
     
     def _add_sources_section(self, story, sources):
         """Add sources section with APA-style citations"""
@@ -476,7 +476,7 @@ class ReportFormatter:
         for key, value in metadata.items():
             if key != 'query':  # Skip query as it might be redundant
                 display_key = key.replace('_', ' ').title()
-                story.append(Paragraph(f"<b>{display_key}:</b> {value}", self.styles['BodyText']))
+                story.append(Paragraph(f"<b>{display_key}:</b> {value}", self.styles['CustomBodyText']))
 
 formatter = ReportFormatter()
 
