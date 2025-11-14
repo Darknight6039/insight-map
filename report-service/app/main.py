@@ -26,7 +26,7 @@ from PIL import Image as PILImage
 # Configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@postgres:5432/insight_db")
 BRAND_LOGO_PATH = os.environ.get("BRAND_LOGO_PATH", "/app/data/logo/logo.svg")
-WATERMARK_PATH = "/app/filigrane/Copie de Ebook Veille automatisée.png"  # Chemin vers le filigrane
+WATERMARK_PATH = "/app/filigrane/watermark.png"  # Chemin vers le filigrane
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -204,38 +204,60 @@ class ReportFormatter:
         ))
     
     def _add_watermark(self, canvas_obj, doc):
-        """Ajoute un filigrane avec opacité réduite sur chaque page"""
+        """Ajoute un filigrane avec opacité réduite sur chaque page en arrière-plan"""
         try:
-            if os.path.exists(WATERMARK_PATH):
-                canvas_obj.saveState()
-                # Réduire l'opacité à 0.1 (10%) pour que le texte reste lisible
-                canvas_obj.setFillAlpha(0.1)
-                
-                # Charger l'image et la redimensionner
-                img = PILImage.open(WATERMARK_PATH)
-                img_width, img_height = img.size
-                
-                # Calculer les dimensions pour centrer le filigrane
-                page_width, page_height = A4
-                max_width = page_width * 0.6  # 60% de la largeur de la page
-                max_height = page_height * 0.6
-                
-                # Calculer le ratio pour conserver les proportions
-                width_ratio = max_width / img_width
-                height_ratio = max_height / img_height
-                ratio = min(width_ratio, height_ratio)
-                
-                new_width = img_width * ratio
-                new_height = img_height * ratio
-                
-                # Centrer le filigrane
-                x = (page_width - new_width) / 2
-                y = (page_height - new_height) / 2
-                
-                canvas_obj.drawImage(WATERMARK_PATH, x, y, width=new_width, height=new_height, mask='auto', preserveAspectRatio=True)
-                canvas_obj.restoreState()
+            logger.info(f"Attempting to add watermark from: {WATERMARK_PATH}")
+            
+            if not os.path.exists(WATERMARK_PATH):
+                logger.warning(f"Watermark file not found at: {WATERMARK_PATH}")
+                return
+            
+            canvas_obj.saveState()
+            
+            # Calculer les dimensions pour centrer le filigrane
+            page_width, page_height = A4
+            
+            # Charger l'image et la redimensionner
+            img = PILImage.open(WATERMARK_PATH)
+            img_width, img_height = img.size
+            logger.info(f"Watermark image loaded: {img_width}x{img_height}")
+            
+            # Filigrane plus grand pour couvrir la page (70% de la largeur)
+            max_width = page_width * 0.7
+            max_height = page_height * 0.7
+            
+            # Calculer le ratio pour conserver les proportions
+            width_ratio = max_width / img_width
+            height_ratio = max_height / img_height
+            ratio = min(width_ratio, height_ratio)
+            
+            new_width = img_width * ratio
+            new_height = img_height * ratio
+            
+            # Centrer le filigrane sur la page
+            x = (page_width - new_width) / 2
+            y = (page_height - new_height) / 2
+            
+            # Dessiner l'image en arrière-plan avec opacité réduite
+            # Important: définir l'opacité AVANT de dessiner
+            canvas_obj.setFillAlpha(0.15)  # 15% d'opacité pour être visible mais discret
+            canvas_obj.setStrokeAlpha(0.15)
+            
+            # Dessiner l'image en arrière-plan
+            canvas_obj.drawImage(
+                WATERMARK_PATH, 
+                x, y, 
+                width=new_width, 
+                height=new_height, 
+                mask='auto',
+                preserveAspectRatio=True
+            )
+            
+            canvas_obj.restoreState()
+            logger.info(f"✅ Watermark added at ({x:.2f}, {y:.2f}) size ({new_width:.2f}x{new_height:.2f})")
+            
         except Exception as e:
-            logger.warning(f"Could not add watermark: {e}")
+            logger.error(f"❌ Error adding watermark: {e}", exc_info=True)
     
     def _add_header_footer(self, canvas_obj, doc):
         """Ajoute en-tête et pied de page"""
@@ -336,16 +358,28 @@ class ReportFormatter:
         # ═══════════════════════════════════════════════════════════════
         # CONTENU PRINCIPAL
         # ═══════════════════════════════════════════════════════════════
-        self._add_content_sections(story, content)
+        sources_from_content = self._add_content_sections(story, content)
+        
+        # Extraire les sources du contenu si elles n'ont pas été fournies
+        if not sources or len(sources) == 0:
+            sources = self._extract_sources_from_content(content)
         
         # ═══════════════════════════════════════════════════════════════
         # SECTION SOURCES (si disponibles)
         # ═══════════════════════════════════════════════════════════════
         if sources and len(sources) > 0:
             story.append(PageBreak())
-            story.append(Paragraph("📚 Sources et Références", self.styles['SectionHeader']))
+            story.append(Paragraph("Sources et Références", self.styles['SectionHeader']))
             story.append(Spacer(1, 0.3*cm))
-            self._add_sources_section(story, sources)
+            
+            # Ajouter les sources en format APA
+            for i, source in enumerate(sources, 1):
+                # Nettoyer la source des markdown
+                cleaned_source = self._clean_markdown(source)
+                # Format APA avec numéro
+                source_text = f"[{i}] {cleaned_source}"
+                story.append(Paragraph(source_text, self.styles['Citation']))
+                story.append(Spacer(1, 6))
         
         # ═══════════════════════════════════════════════════════════════
         # MÉTADONNÉES (si disponibles)
@@ -357,16 +391,69 @@ class ReportFormatter:
             self._add_metadata_section(story, metadata)
         
         # Build PDF avec filigrane sur chaque page
-        doc.build(story, onFirstPage=self._on_page, onLaterPages=self._on_page)
+        # Utiliser des lambdas pour s'assurer que les callbacks fonctionnent
+        logger.info("Building PDF with watermark callbacks...")
+        doc.build(
+            story, 
+            onFirstPage=lambda canvas, doc: self._on_page(canvas, doc),
+            onLaterPages=lambda canvas, doc: self._on_page(canvas, doc)
+        )
+        logger.info("PDF built successfully")
         pdf = buffer.getvalue()
         buffer.close()
         return pdf
+    
+    def _clean_markdown(self, text):
+        """Nettoie le texte des symboles markdown pour un rendu PDF propre"""
+        import re
+        
+        # Retirer les ** pour le gras (on utilise les balises HTML à la place)
+        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        
+        # Retirer les * pour l'italique
+        text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+        
+        # Retirer les `` pour le code inline
+        text = re.sub(r'`(.+?)`', r'<font name="Courier">\1</font>', text)
+        
+        # Conserver les citations [1], [2], etc. en gras
+        text = re.sub(r'\[(\d+)\]', r'<b>[\1]</b>', text)
+        
+        return text
+    
+    def _extract_sources_from_content(self, content):
+        """Extrait les sources formatées en APA depuis le contenu"""
+        import re
+        sources = []
+        in_sources = False
+        
+        for line in content.split('\n'):
+            line_stripped = line.strip()
+            
+            # Détecter le début de la section sources
+            if line_stripped.startswith('## 📚') or line_stripped.startswith('## Sources'):
+                in_sources = True
+                continue
+            
+            # Si on est dans la section sources et qu'on trouve une citation
+            if in_sources and line_stripped.startswith('['):
+                # Extraire le format [N] Auteur. (Année). Titre. URL
+                match = re.match(r'\[(\d+)\]\s*(.+)', line_stripped)
+                if match:
+                    sources.append(match.group(2).strip())
+            
+            # Si on rencontre une nouvelle section majeure, on sort des sources
+            if in_sources and line_stripped.startswith('## ') and not line_stripped.startswith('## 📚') and not line_stripped.startswith('## Sources'):
+                break
+        
+        return sources
     
     def _add_content_sections(self, story, content):
         """Parse content and add structured sections with better markdown support"""
         lines = content.split('\n')
         current_section = []
         in_sources = False
+        sources_found = []
         
         for line in lines:
             line_stripped = line.strip()
@@ -377,32 +464,42 @@ class ReportFormatter:
                 continue
             
             if in_sources and line_stripped.startswith('['):
+                sources_found.append(line_stripped)
                 continue  # Skip source citations in content
+            
+            # Si on rencontre une autre section majeure, on sort des sources
+            if in_sources and line_stripped.startswith('## '):
+                in_sources = False
                 
             if not line_stripped:
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
+                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 story.append(Spacer(1, 8))
                 continue
             
             # Check for section headers (## Header)
-            if line_stripped.startswith('##'):
+            if line_stripped.startswith('##') and not in_sources:
                 # Add previous section content
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
+                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 # Add new section header
                 header_text = line_stripped.lstrip('#').strip()
+                # Enlever les emojis des titres s'ils sont encore là
+                header_text = header_text.replace('📚', '').replace('ℹ️', '').strip()
                 story.append(Spacer(1, 0.4*cm))
                 story.append(Paragraph(header_text, self.styles['SectionHeader']))
                 story.append(Spacer(1, 0.2*cm))
                 
             # Check for subsection headers (### or **)
-            elif line_stripped.startswith('###') or (line_stripped.startswith('**') and line_stripped.endswith('**')):
+            elif line_stripped.startswith('###') or (line_stripped.startswith('**') and line_stripped.endswith('**') and ':' in line_stripped):
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
+                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 header_text = line_stripped.lstrip('#').strip('*').strip()
@@ -411,21 +508,27 @@ class ReportFormatter:
                 story.append(Spacer(1, 0.1*cm))
                 
             # Check for bullet points
-            elif line_stripped.startswith(('-', '•', '*')) and not line_stripped.startswith('**'):
+            elif line_stripped.startswith(('- ', '• ', '* ')) and not line_stripped.startswith('**'):
                 if current_section:
-                    story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
+                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 bullet_text = line_stripped.lstrip('-•*').strip()
-                story.append(Paragraph(f"• {bullet_text}", self.styles['BulletPoint']))
+                cleaned_bullet = self._clean_markdown(bullet_text)
+                story.append(Paragraph(f"• {cleaned_bullet}", self.styles['BulletPoint']))
                 
             # Regular text
             else:
-                current_section.append(line_stripped)
+                if not in_sources:
+                    current_section.append(line_stripped)
         
         # Add remaining content
         if current_section:
-            story.append(Paragraph(' '.join(current_section), self.styles['CustomBodyText']))
+            cleaned_text = self._clean_markdown(' '.join(current_section))
+            story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
+        
+        return sources_found
     
     def _add_sources_section(self, story, sources):
         """Add sources section with APA-style citations"""
