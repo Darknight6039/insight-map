@@ -1,0 +1,60 @@
+=================================================================
+🚀 COPIER-COLLER CES COMMANDES DANS VOTRE TERMINAL
+=================================================================
+
+# 1. Aller dans le dossier du projet
+cd /Users/isaiaebongue/insight-mvp
+
+# 2. Arrêter les conteneurs existants
+docker compose down
+
+# 3. Reconstruire les images avec Perplexity (IMPORTANT!)
+docker compose build --no-cache backend-service rag-service
+
+# 4. Démarrer tous les services
+docker compose up -d
+
+# 5. Attendre 30 secondes que tout démarre
+echo "⏳ Attente du démarrage des services..."
+sleep 30
+
+# 6. Vérifier le status
+docker compose ps
+
+# 7. Test de santé
+echo ""
+echo "🧪 Test du backend avec Perplexity..."
+curl http://localhost:8006/health
+
+# 8. Test Perplexity direct
+echo ""
+echo "🧪 Test de l'API Perplexity..."
+curl http://localhost:8006/test-perplexity
+
+# 9. Voir les logs (optionnel)
+# docker compose logs -f backend-service
+
+=================================================================
+✅ COMMANDE RAPIDE TOUT-EN-UN (Alternative)
+=================================================================
+
+cd /Users/isaiaebongue/insight-mvp && docker compose down && docker compose build --no-cache backend-service rag-service && docker compose up -d && sleep 30 && docker compose ps && curl http://localhost:8006/health
+
+=================================================================
+📊 COMMANDES UTILES
+=================================================================
+
+# Voir les logs en temps réel
+docker compose logs -f
+
+# Voir logs backend uniquement
+docker compose logs -f backend-service
+
+# Arrêter l'application
+docker compose down
+
+# Redémarrer un service
+docker compose restart backend-service
+
+=================================================================
+

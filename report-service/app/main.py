@@ -13,16 +13,19 @@ from sqlalchemy.orm import sessionmaker
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
-from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, Image
+from reportlab.lib.units import inch, cm
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY, TA_RIGHT
+from reportlab.lib.utils import ImageReader
 from loguru import logger
+from PIL import Image as PILImage
 
 
 # Configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@postgres:5432/insight_db")
 BRAND_LOGO_PATH = os.environ.get("BRAND_LOGO_PATH", "/app/data/logo/logo.svg")
+WATERMARK_PATH = "/app/filigrane/Copie de Ebook Veille automatisée.png"  # Chemin vers le filigrane
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -95,132 +98,378 @@ class ReportFormatter:
         self.setup_styles()
     
     def setup_styles(self):
-        # Create custom styles
+        # Create custom styles - Style Veille Stratégique Professionnelle
         self.styles.add(ParagraphStyle(
             name='CustomTitle',
             parent=self.styles['Title'],
-            fontSize=24,
-            spaceAfter=30,
-            textColor=colors.HexColor('#1a365d'),
-            alignment=TA_CENTER
+            fontSize=26,
+            fontName='Helvetica-Bold',
+            spaceAfter=6,
+            spaceBefore=20,
+            textColor=colors.HexColor('#0052A5'),  # Bleu corporate
+            alignment=TA_CENTER,
+            leading=32
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='Subtitle',
+            parent=self.styles['Normal'],
+            fontSize=14,
+            fontName='Helvetica',
+            spaceAfter=20,
+            textColor=colors.HexColor('#666666'),
+            alignment=TA_CENTER,
+            leading=18
         ))
         
         self.styles.add(ParagraphStyle(
             name='SectionHeader',
             parent=self.styles['Heading1'],
-            fontSize=16,
-            spaceBefore=20,
-            spaceAfter=12,
-            textColor=colors.HexColor('#2d3748'),
-            leftIndent=0
+            fontSize=14,
+            fontName='Helvetica-Bold',
+            spaceBefore=16,
+            spaceAfter=8,
+            textColor=colors.HexColor('#0052A5'),
+            leftIndent=0,
+            borderPadding=6,
+            borderColor=colors.HexColor('#0052A5'),
+            borderWidth=0,
+            leading=18
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='SubsectionHeader',
+            parent=self.styles['Heading2'],
+            fontSize=12,
+            fontName='Helvetica-Bold',
+            spaceBefore=12,
+            spaceAfter=6,
+            textColor=colors.HexColor('#333333'),
+            leftIndent=0,
+            leading=16
         ))
         
         self.styles.add(ParagraphStyle(
             name='BodyText',
             parent=self.styles['Normal'],
-            fontSize=11,
-            spaceAfter=12,
-            alignment=TA_JUSTIFY
+            fontSize=10,
+            fontName='Helvetica',
+            spaceAfter=10,
+            spaceBefore=2,
+            alignment=TA_JUSTIFY,
+            leading=14,
+            textColor=colors.HexColor('#333333')
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='BulletPoint',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            fontName='Helvetica',
+            spaceAfter=6,
+            leftIndent=20,
+            bulletIndent=10,
+            leading=14,
+            textColor=colors.HexColor('#333333')
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='Citation',
+            parent=self.styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica',
+            spaceAfter=4,
+            leftIndent=15,
+            textColor=colors.HexColor('#666666'),
+            leading=12
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='Footer',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            fontName='Helvetica',
+            textColor=colors.HexColor('#999999'),
+            alignment=TA_CENTER
         ))
     
+    def _add_watermark(self, canvas_obj, doc):
+        """Ajoute un filigrane avec opacité réduite sur chaque page"""
+        try:
+            if os.path.exists(WATERMARK_PATH):
+                canvas_obj.saveState()
+                # Réduire l'opacité à 0.1 (10%) pour que le texte reste lisible
+                canvas_obj.setFillAlpha(0.1)
+                
+                # Charger l'image et la redimensionner
+                img = PILImage.open(WATERMARK_PATH)
+                img_width, img_height = img.size
+                
+                # Calculer les dimensions pour centrer le filigrane
+                page_width, page_height = A4
+                max_width = page_width * 0.6  # 60% de la largeur de la page
+                max_height = page_height * 0.6
+                
+                # Calculer le ratio pour conserver les proportions
+                width_ratio = max_width / img_width
+                height_ratio = max_height / img_height
+                ratio = min(width_ratio, height_ratio)
+                
+                new_width = img_width * ratio
+                new_height = img_height * ratio
+                
+                # Centrer le filigrane
+                x = (page_width - new_width) / 2
+                y = (page_height - new_height) / 2
+                
+                canvas_obj.drawImage(WATERMARK_PATH, x, y, width=new_width, height=new_height, mask='auto', preserveAspectRatio=True)
+                canvas_obj.restoreState()
+        except Exception as e:
+            logger.warning(f"Could not add watermark: {e}")
+    
+    def _add_header_footer(self, canvas_obj, doc):
+        """Ajoute en-tête et pied de page"""
+        canvas_obj.saveState()
+        page_width, page_height = A4
+        
+        # Pied de page
+        canvas_obj.setFont('Helvetica', 8)
+        canvas_obj.setFillColor(colors.HexColor('#999999'))
+        
+        # Date et heure à gauche
+        footer_text = f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
+        canvas_obj.drawString(2*cm, 1.5*cm, footer_text)
+        
+        # Numéro de page à droite
+        page_num = f"Page {doc.page}"
+        canvas_obj.drawRightString(page_width - 2*cm, 1.5*cm, page_num)
+        
+        # Ligne de séparation en haut
+        canvas_obj.setStrokeColor(colors.HexColor('#0052A5'))
+        canvas_obj.setLineWidth(0.5)
+        canvas_obj.line(2*cm, page_height - 2*cm, page_width - 2*cm, page_height - 2*cm)
+        
+        canvas_obj.restoreState()
+    
+    def _on_page(self, canvas_obj, doc):
+        """Callback appelé pour chaque page"""
+        self._add_watermark(canvas_obj, doc)
+        self._add_header_footer(canvas_obj, doc)
+    
     def create_professional_pdf(self, title: str, content: str, analysis_type: str = None, sources: List[Dict] = None, metadata: Dict = None) -> bytes:
-        """Create a professional PDF report"""
+        """Create a professional PDF report with watermark - Style Veille Stratégique"""
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4, 
+            rightMargin=2*cm, 
+            leftMargin=2*cm, 
+            topMargin=3*cm, 
+            bottomMargin=2.5*cm
+        )
         
         # Build the document
         story = []
         
-        # Title page
-        story.append(Spacer(1, 2*inch))
-        story.append(Paragraph(title, self.styles['CustomTitle']))
-        story.append(Spacer(1, 0.5*inch))
+        # ═══════════════════════════════════════════════════════════════
+        # PAGE DE COUVERTURE - Style Veille Stratégique
+        # ═══════════════════════════════════════════════════════════════
+        story.append(Spacer(1, 3*cm))
         
+        # Barre de titre avec fond bleu (simulée avec un tableau)
+        title_data = [[Paragraph(title, self.styles['CustomTitle'])]]
+        title_table = Table(title_data, colWidths=[doc.width])
+        title_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0052A5')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('PADDING', (0, 0), (-1, -1), 15),
+            ('TOPPADDING', (0, 0), (-1, -1), 20),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
+        ]))
+        story.append(title_table)
+        story.append(Spacer(1, 1.5*cm))
+        
+        # Type d'analyse (si fourni)
         if analysis_type:
             analysis_type_display = analysis_type.replace('_', ' ').title()
-            story.append(Paragraph(f"Type d'analyse: {analysis_type_display}", self.styles['Normal']))
-            story.append(Spacer(1, 0.25*inch))
+            story.append(Paragraph(f"<b>Type d'analyse :</b> {analysis_type_display}", self.styles['Subtitle']))
+            story.append(Spacer(1, 0.5*cm))
         
-        story.append(Paragraph(f"Généré le: {datetime.now().strftime('%d/%m/%Y à %H:%M')}", self.styles['Normal']))
-        story.append(Spacer(1, 1*inch))
+        # Date de génération
+        date_str = datetime.now().strftime('%d %B %Y')
+        story.append(Paragraph(f"<b>Date :</b> {date_str}", self.styles['Subtitle']))
+        story.append(Spacer(1, 0.3*cm))
         
-        # Content sections
+        # Heure
+        time_str = datetime.now().strftime('%H:%M')
+        story.append(Paragraph(f"<b>Heure :</b> {time_str}", self.styles['Subtitle']))
+        
+        story.append(Spacer(1, 2*cm))
+        
+        # Box d'information (optionnel)
+        if metadata and metadata.get('business_type'):
+            info_data = [[Paragraph(f"<b>Secteur :</b> {metadata['business_type'].replace('_', ' ').title()}", self.styles['Normal'])]]
+            info_table = Table(info_data, colWidths=[doc.width])
+            info_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F4F8')),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('PADDING', (0, 0), (-1, -1), 10),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0052A5')),
+            ]))
+            story.append(info_table)
+        
+        # Saut de page avant le contenu
+        story.append(PageBreak())
+        
+        # ═══════════════════════════════════════════════════════════════
+        # CONTENU PRINCIPAL
+        # ═══════════════════════════════════════════════════════════════
         self._add_content_sections(story, content)
         
-        # Sources section
-        if sources:
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION SOURCES (si disponibles)
+        # ═══════════════════════════════════════════════════════════════
+        if sources and len(sources) > 0:
             story.append(PageBreak())
-            story.append(Paragraph("Sources", self.styles['SectionHeader']))
-            story.append(Spacer(1, 12))
-            self._add_sources_table(story, sources)
+            story.append(Paragraph("📚 Sources et Références", self.styles['SectionHeader']))
+            story.append(Spacer(1, 0.3*cm))
+            self._add_sources_section(story, sources)
         
-        # Metadata section
-        if metadata:
-            story.append(Spacer(1, 24))
-            story.append(Paragraph("Métadonnées de l'analyse", self.styles['SectionHeader']))
-            story.append(Spacer(1, 12))
+        # ═══════════════════════════════════════════════════════════════
+        # MÉTADONNÉES (si disponibles)
+        # ═══════════════════════════════════════════════════════════════
+        if metadata and len(metadata) > 1:  # Plus que juste business_type
+            story.append(Spacer(1, 1*cm))
+            story.append(Paragraph("ℹ️ Informations Complémentaires", self.styles['SectionHeader']))
+            story.append(Spacer(1, 0.3*cm))
             self._add_metadata_section(story, metadata)
         
-        # Build PDF
-        doc.build(story)
+        # Build PDF avec filigrane sur chaque page
+        doc.build(story, onFirstPage=self._on_page, onLaterPages=self._on_page)
         pdf = buffer.getvalue()
         buffer.close()
         return pdf
     
     def _add_content_sections(self, story, content):
-        """Parse content and add structured sections"""
+        """Parse content and add structured sections with better markdown support"""
         lines = content.split('\n')
         current_section = []
+        in_sources = False
         
         for line in lines:
-            line = line.strip()
-            if not line:
+            line_stripped = line.strip()
+            
+            # Skip sources section (will be handled separately)
+            if line_stripped.startswith('## 📚') or line_stripped.startswith('## Sources'):
+                in_sources = True
                 continue
+            
+            if in_sources and line_stripped.startswith('['):
+                continue  # Skip source citations in content
                 
-            # Check if it's a section header (starts with **)
-            if line.startswith('**') and line.endswith('**'):
+            if not line_stripped:
+                if current_section:
+                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    current_section = []
+                story.append(Spacer(1, 8))
+                continue
+            
+            # Check for section headers (## Header)
+            if line_stripped.startswith('##'):
                 # Add previous section content
                 if current_section:
                     story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
                     current_section = []
                 
                 # Add new section header
-                header_text = line.strip('*').strip()
-                story.append(Spacer(1, 12))
+                header_text = line_stripped.lstrip('#').strip()
+                story.append(Spacer(1, 0.4*cm))
                 story.append(Paragraph(header_text, self.styles['SectionHeader']))
-                story.append(Spacer(1, 6))
+                story.append(Spacer(1, 0.2*cm))
+                
+            # Check for subsection headers (### or **)
+            elif line_stripped.startswith('###') or (line_stripped.startswith('**') and line_stripped.endswith('**')):
+                if current_section:
+                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    current_section = []
+                
+                header_text = line_stripped.lstrip('#').strip('*').strip()
+                story.append(Spacer(1, 0.3*cm))
+                story.append(Paragraph(header_text, self.styles['SubsectionHeader']))
+                story.append(Spacer(1, 0.1*cm))
+                
+            # Check for bullet points
+            elif line_stripped.startswith(('-', '•', '*')) and not line_stripped.startswith('**'):
+                if current_section:
+                    story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
+                    current_section = []
+                
+                bullet_text = line_stripped.lstrip('-•*').strip()
+                story.append(Paragraph(f"• {bullet_text}", self.styles['BulletPoint']))
+                
+            # Regular text
             else:
-                current_section.append(line)
+                current_section.append(line_stripped)
         
         # Add remaining content
         if current_section:
             story.append(Paragraph(' '.join(current_section), self.styles['BodyText']))
     
-    def _add_sources_table(self, story, sources):
-        """Add sources as a formatted table"""
+    def _add_sources_section(self, story, sources):
+        """Add sources section with APA-style citations"""
         if not sources:
             return
         
-        table_data = [['Document ID', 'Score de pertinence']]
+        # Si les sources sont des dictionnaires avec doc_id et score (ancien format)
+        if isinstance(sources[0], dict) and 'doc_id' in sources[0]:
+            table_data = [['Document ID', 'Pertinence']]
+            
+            for source in sources:
+                doc_id = source.get('doc_id', 'N/A')
+                score = source.get('score', 0)
+                table_data.append([str(doc_id), f"{score:.2f}"])
+            
+            table = Table(table_data, colWidths=[3*inch, 1.5*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0052A5')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ]))
+            story.append(table)
         
-        for source in sources:
-            doc_id = source.get('doc_id', 'N/A')
-            score = source.get('score', 0)
-            table_data.append([str(doc_id), f"{score:.2f}"])
+        # Si les sources sont des strings (nouveau format avec citations)
+        elif isinstance(sources, list) and len(sources) > 0 and isinstance(sources[0], str):
+            for source in sources:
+                story.append(Paragraph(source, self.styles['Citation']))
+                story.append(Spacer(1, 4))
         
-        table = Table(table_data, colWidths=[2*inch, 2*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 14),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        
-        story.append(table)
+        # Si les sources sont dans le contenu (parsing du format Perplexity)
+        else:
+            for i, source in enumerate(sources, 1):
+                if isinstance(source, dict):
+                    # Format avec URL
+                    citation_text = f"[{i}] {source.get('text', 'Source')}"
+                    if source.get('url'):
+                        citation_text += f" {source['url']}"
+                    story.append(Paragraph(citation_text, self.styles['Citation']))
+                else:
+                    # Format simple string
+                    story.append(Paragraph(f"[{i}] {source}", self.styles['Citation']))
+                story.append(Spacer(1, 4))
+    
+    def _add_sources_table(self, story, sources):
+        """Deprecated - use _add_sources_section instead"""
+        self._add_sources_section(story, sources)
     
     def _add_metadata_section(self, story, metadata):
         """Add metadata information"""

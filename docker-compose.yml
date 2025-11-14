@@ -70,7 +70,9 @@ services:
     command: uvicorn app.rag_main:app --host 0.0.0.0 --port 8003
 
   report-service:
-    build: ./report-service
+    build:
+      context: .
+      dockerfile: ./report-service/Dockerfile
     env_file: .env
     ports:
       - "8004:8004"
@@ -78,7 +80,7 @@ services:
       - postgres
     networks:
       - insight-network
-    command: uvicorn app.enhanced_main:app --host 0.0.0.0 --port 8004 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     volumes:
       - ./data:/app/data:ro
 
