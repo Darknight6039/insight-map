@@ -6,6 +6,7 @@ from typing import Optional, List, Dict
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text, Column, Integer, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
@@ -90,6 +91,15 @@ Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="Report Service - Professional Report Generation", version="0.1.0")
+
+# Configuration CORS pour permettre les requêtes depuis le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, spécifier les domaines exacts
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Utility functions for PDF generation
 class ReportFormatter:
