@@ -15,13 +15,13 @@ from loguru import logger
 from importlib import metadata
 from app.business_prompts import get_business_prompt, get_available_business_types, get_business_type_display_name
 
-# Import OpenAI (compatible with Perplexity API)
+# Import SDK Perplexity (compatible OpenAI SDK)
 try:
     from openai import OpenAI
-    OPENAI_AVAILABLE = True
+    OPENAI_SDK_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.error("OpenAI package not available")
+    OPENAI_SDK_AVAILABLE = False
+    logger.error("SDK OpenAI package not available (required for Perplexity API compatibility)")
 
 app = FastAPI(title="Backend Intelligence Service", description="Rapports longs cabinet de conseil - version robuste")
 
@@ -36,10 +36,21 @@ app.add_middleware(
 
 # Configuration - Perplexity API
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
-PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")  # Modèle Perplexity par défaut
 PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 VECTOR_SERVICE_URL = "http://vector-service:8002"
 DOCUMENT_SERVICE_URL = "http://document-service:8001"
+
+# Configuration multi-modèles Sonar optimisée par cas d'usage
+# IMPORTANT: Tous les rapports (standards et approfondis) utilisent sonar-pro
+PERPLEXITY_MODELS = {
+    "chat": os.getenv("PERPLEXITY_MODEL_CHAT", "sonar"),              # Chat court, tests
+    "analysis": os.getenv("PERPLEXITY_MODEL_ANALYSIS", "sonar-pro"),  # TOUS les rapports
+    "reasoning": os.getenv("PERPLEXITY_MODEL_REASONING", "sonar-reasoning") # Réservé usage futur
+}
+
+def get_model_for_task(task_type: str) -> str:
+    """Sélectionne le modèle Sonar approprié selon la tâche"""
+    return PERPLEXITY_MODELS.get(task_type, PERPLEXITY_MODELS["chat"])
 
 # Cache pour les métadonnées des documents
 _document_metadata_cache = {}
@@ -226,277 +237,589 @@ def format_context_safe(documents: List[Dict]) -> str:
     return context
 
 def create_optimized_prompt(business_type: str, analysis_type: str, query: str, context: str) -> str:
-    """Crée prompts ultra-structurés pour rapports de cabinet de conseil"""
+    """Crée prompts concis et efficaces pour rapports de cabinet de conseil avec sonar-pro"""
     
-    # Templates ultra-détaillés avec citations APA
-    prompt_templates = {
-        "finance_banque": f"""📊 ANALYSE STRATÉGIQUE BANCAIRE - FORMAT CABINET DE CONSEIL
+    # Détection rapport approfondi (60 sources)
+    if "approfondi" in analysis_type.lower():
+        prompt_templates_deep = {
+            "finance_banque": f"""Tu es un consultant senior McKinsey spécialisé en stratégie bancaire - Rapport Approfondi.
 
-🎯 MISSION: {query}
+**MISSION** : {query}
 
-📚 CONTEXTE DOCUMENTAIRE:
+**CONTEXTE DOCUMENTAIRE** :
 {context[:5000]}
 
-═══════════════════════════════════════════════════════════════
+**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
 
-INSTRUCTIONS DE RÉDACTION (FORMAT CABINET CONSEIL):
+## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+- Utilise recherche web Perplexity exhaustive
+- MINIMUM 60 sources organisées par catégorie
 
-1. CITATIONS ACADÉMIQUES OBLIGATOIRES:
-   - Format: [¹], [²], [³] pour citations inline
-   - CHAQUE donnée chiffrée DOIT avoir sa citation
-   - CHAQUE affirmation factuelle DOIT être sourcée
-   - Exemple: "Le marché bancaire croît de 3% [¹]"
+## HIÉRARCHIE SOURCES STRICTE (60 sources) :
+- 36 sources institutionnelles (60%) : INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA
+- 12 sources académiques (20%) : McKinsey, BCG, Bain, think tanks (OFCE, Bruegel, CEPII)
+- 9 sources média réputé (15%) : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
+- 3 sources complémentaires (5%) : vérifiées et pertinentes
 
-2. STRUCTURE ULTRA-DÉTAILLÉE REQUISE:
+## RECHERCHE EN 3 PHASES :
+Phase 1 : 20 sources institutionnelles minimum
+Phase 2 : 20 sources académiques/études minimum
+Phase 3 : 20 sources média/complémentaires minimum
 
-# 📋 RAPPORT STRATÉGIQUE BANCAIRE
+## STRUCTURE RAPPORT EXHAUSTIF :
 
-## 🎯 EXECUTIVE SUMMARY (1-2 pages)
-### Contexte et Enjeux Stratégiques
-- Situation actuelle du secteur avec données [¹]
-- Enjeux de transformation majeurs [²]
-- Opportunités et menaces immédiates [³]
+1. **Executive Summary** (800-1000 mots)
+   - 8-10 KPIs clés avec 3-4 sources croisées chacun
+   - Top 5 recommandations avec ROI, budget, timeline
 
-### Recommandations Prioritaires
-1. **Action Priorité 1**: [Description détaillée] - ROI estimé, timeline
-2. **Action Priorité 2**: [Description détaillée] - ROI estimé, timeline  
-3. **Action Priorité 3**: [Description détaillée] - ROI estimé, timeline
+2. **Analyse Sectorielle Approfondie** (2500-3000 mots)
+   - Dimensionnement marché détaillé (10+ métriques)
+   - Segmentation complète avec données chiffrées
+   - Évolutions historiques 5 ans + projections 3 ans
+   - MINIMUM 25 données chiffrées avec sources croisées
 
-### Impact Business Attendu
-- KPIs quantifiés avec benchmarks sectoriels [¹]
-- Timeline de mise en œuvre (6-12-18 mois)
-- Budget et ressources nécessaires
+3. **Analyse Concurrentielle Exhaustive** (2000-2500 mots)
+   - Tableau comparatif 12+ critères × 8-10 acteurs
+   - Chaque cellule doit avoir sa source
+   - Analyse détaillée forces/faiblesses par acteur
+   - Cartographie positionnement stratégique
+   - MINIMUM 3 tableaux comparatifs détaillés
 
----
+4. **Recommandations Stratégiques** (2000-2500 mots)
+   - 8-10 recommandations ultra-détaillées
+   - Chaque recommandation : budget, ROI, timeline, risques, KPIs
+   - Plans d'action opérationnels concrets
+   - Analyses coûts-bénéfices détaillées
 
-## 📊 ANALYSE SECTORIELLE APPROFONDIE (3-4 pages)
+5. **Projections et Scénarios** (1500-2000 mots)
+   - 3 scénarios modélisés (optimiste, central, pessimiste)
+   - Analyses de sensibilité sur 4-5 variables
+   - Tableaux financiers détaillés
 
-### 1. Dimensionnement du Marché
-- **Taille actuelle**: XX M€/M$ [¹]
-- **Croissance annuelle**: XX% [²]
-- **Prévisions 2025-2030**: Détaillées avec hypothèses [³]
-- **Parts de marché**: Top 10 acteurs avec évolution [⁴]
+6. **Bibliographie Organisée** (60 sources MINIMUM)
+   - Section Sources Institutionnelles (36 sources)
+   - Section Sources Académiques (12 sources)
+   - Section Média Réputé (9 sources)
+   - Section Complémentaires (3 sources)
 
-### 2. Segmentation et Dynamiques
-- **Segments de clientèle**: Retail, Corporate, Private Banking [¹]
-- **Évolution comportements clients**: Digitalisation, attentes [²]
-- **Produits/Services porteurs**: Analyse détaillée [³]
+## IMPÉRATIFS QUALITÉ :
+- MINIMUM 60 sources organisées par catégorie
+- MINIMUM 50 données chiffrées avec sources croisées
+- MINIMUM 5 tableaux comparatifs détaillés
+- Croisement 3-4 sources pour chaque donnée stratégique
+- Citations denses : chaque paragraphe doit avoir 3-5 citations minimum
 
-### 3. Technologies et Innovation
-- **Fintech et disruption**: Impact sur acteurs traditionnels [¹]
-- **IA et automatisation**: Cas d'usage bancaires [²]
-- **Blockchain et crypto**: Opportunités et risques [³]
-- **Open Banking**: État des lieux réglementaire [⁴]
+Génère maintenant ce rapport exhaustif :""",
 
-### 4. Environnement Réglementaire
-- **Contraintes majeures**: Bâle III/IV, MiFID II, etc. [¹]
-- **Impact opérationnel**: Coûts compliance, reporting [²]
-- **Évolutions à venir**: Anticipation 2025-2026 [³]
+            "tech_digital": f"""Tu es un consultant BCG expert en transformation digitale - Rapport Approfondi.
 
----
+**MISSION** : {query}
 
-## ⚔️ ANALYSE CONCURRENTIELLE (2-3 pages)
+**CONTEXTE** : {context[:5000]}
 
-### Mapping Concurrentiel
-**Quadrant Leaders (Market Leaders)**:
-- Acteur A: Forces [¹], Faiblesses [²], Parts de marché XX% [³]
-- Acteur B: Forces [¹], Faiblesses [²], Parts de marché XX% [³]
+**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
 
-**Quadrant Challengers**:
-- [Analyse détaillée avec données chiffrées]
+## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+- Utilise recherche web Perplexity exhaustive
+- MINIMUM 60 sources organisées par catégorie
 
-**Quadrant Niche Players**:
-- [Analyse détaillée avec positionnement]
+## HIÉRARCHIE SOURCES STRICTE (60 sources) :
+- 36 sources institutionnelles (60%) : Gartner, IDC, Forrester, organismes tech officiels
+- 12 sources académiques (20%) : McKinsey Digital, BCG Digital Ventures, whitepapers recherche
+- 9 sources média tech (15%) : TechCrunch, Wired, MIT Tech Review, ZDNet
+- 3 sources complémentaires (5%)
 
-### Stratégies de Différenciation
-1. **Par l'innovation**: Exemples concrets [¹]
-2. **Par l'expérience client**: Benchmarks NPS [²]
-3. **Par les coûts**: Efficiency ratio comparés [³]
+## IMPÉRATIFS :
+- 50+ données chiffrées avec sources croisées
+- 5+ tableaux comparatifs détaillés
+- Rapport 8000-10000 mots
 
-### Menaces Compétitives
-- **Nouveaux entrants**: Fintechs, BigTech [¹]
-- **Substituts**: Monnaies digitales, DeFi [²]
-- **Consolidation**: M&A récentes et à venir [³]
+Génère maintenant ce rapport exhaustif :""",
 
----
+            "retail_commerce": f"""Tu es un consultant Bain expert retail - Rapport Approfondi.
 
-## 💡 RECOMMANDATIONS STRATÉGIQUES (3-4 pages)
+**MISSION** : {query}
 
-### Plan d'Action Immédiat (0-6 mois)
-**Initiative 1: [Titre]**
-- Objectif: [Détaillé et quantifié]
-- Actions: [Liste numérotée avec responsables]
-- ROI: XX% ou XX M€ [¹]
-- Risques: [Identifiés avec mitigation]
-- KPIs: [3-5 indicateurs mesurables]
+**CONTEXTE** : {context[:5000]}
 
-**Initiative 2: [Titre]**
-[Même structure détaillée]
+**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
 
-### Plan d'Action Moyen Terme (6-18 mois)
-[3-4 initiatives structurées identiquement]
+## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+- Utilise recherche web Perplexity exhaustive
+- MINIMUM 60 sources organisées par catégorie
 
-### Investissements Requis
-| Poste | Budget | Timeline | ROI Attendu |
-|-------|--------|----------|-------------|
-| IT/Digital | XX M€ | Q1-Q4 | XX% [¹] |
-| Talents | XX M€ | Continu | XX% [²] |
-| Marketing | XX M€ | Q2-Q3 | XX% [³] |
+## HIÉRARCHIE SOURCES STRICTE (60 sources) :
+- 36 sources institutionnelles (60%) : INSEE, FEVAD, LSA, CREDOC, observatoires secteur
+- 12 sources académiques (20%) : McKinsey Retail, BCG Consumer, études spécialisées
+- 9 sources média commerce (15%) : LSA, e-commerce mag, Retail Dive
+- 3 sources complémentaires (5%)
 
----
+## IMPÉRATIFS :
+- 50+ données chiffrées avec sources croisées
+- 5+ tableaux comparatifs détaillés
+- Rapport 8000-10000 mots
 
-## 📈 PROJECTIONS ET SCÉNARIOS (2 pages)
+Génère maintenant ce rapport exhaustif :"""
+        }
+        
+        return prompt_templates_deep.get(business_type, prompt_templates_deep["finance_banque"])
+    
+    # Templates standards (40-60 sources) - code existant
+    prompt_templates = {
+        "finance_banque": f"""Tu es un consultant senior McKinsey spécialisé en stratégie bancaire.
 
-### Scénario Optimiste (+15% croissance)
-- Hypothèses: [Listées et sourcées]
-- Impacts business: [Quantifiés] [¹]
-- Probabilité: XX% basée sur [²]
+**MISSION** : {query}
 
-### Scénario Central (+8% croissance)
-[Même structure]
+**CONTEXTE DOCUMENTAIRE** :
+{context[:5000]}
 
-### Scénario Pessimiste (+2% croissance)
-[Même structure]
+**FORMAT ATTENDU** :
 
-### KPIs de Suivi Recommandés
-1. **Revenue Growth**: Target XX% [¹]
-2. **Market Share**: Target XX% [²]
-3. **Cost/Income Ratio**: Target XX% [³]
-4. **NPS Client**: Target XX/100 [⁴]
-5. **Digital Adoption**: Target XX% [⁵]
+Génère un rapport stratégique professionnel ultra-détaillé (6000-8000 mots) avec :
 
----
+## EXIGENCES SOURCES (TOUS RAPPORTS) :
+- MINIMUM 40-60 sources variées et approfondies
+- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+- Utilise recherche web Perplexity exhaustive pour données actuelles
 
-## 📚 BIBLIOGRAPHIE APA
+## Structure Obligatoire avec Numérotation Hiérarchique
 
-[1] Auteur. (Année). Titre document. Type, p. XX.
-[2] Auteur. (Année). Titre document. Type, p. XX.
-[...] [Toutes les sources citées]
+IMPORTANT: Tous les titres doivent être numérotés hiérarchiquement:
+- Niveau ## : 1, 2, 3, 4, etc.
+- Niveau ### : 1.1, 1.2, 2.1, 2.2, etc.
+- Niveau #### : 1.1.1, 1.1.2, 2.1.1, etc.
 
-═══════════════════════════════════════════════════════════════
+Exemple:
+## 1. Executive Summary
+### 1.1 Synthèse Quantifiée
+### 1.2 Recommandations Clés
 
-EXIGENCES QUALITÉ:
-✅ Minimum 6000 mots (format cabinet conseil)
-✅ TOUTES les données chiffrées citées [¹][²][³]
-✅ Espacement markdown clair (lignes vides entre sections)
-✅ Tableaux pour données comparatives
-✅ Listes à puces pour lisibilité
-✅ Bibliographie APA complète en fin
+## 2. Analyse Sectorielle Quantifiée
+### 2.1 Dimensionnement Marché
+#### 2.1.1 Taille Actuelle
+#### 2.1.2 Projections
 
-GÉNÈRE MAINTENANT CE RAPPORT ULTRA-DÉTAILLÉ:""",
+## Style Rédactionnel - Contenu Enrichi
 
-        "tech_digital": f"""ANALYSE TRANSFORMATION DIGITALE
+IMPORTANT: Chaque section doit alterner paragraphes narratifs et bullet points:
 
-MISSION: {query}
+STRUCTURE REQUISE POUR CHAQUE SECTION:
+1. Paragraphe d'introduction (3-5 phrases) qui contextualise le sujet
+2. Développement avec 2-3 paragraphes narratifs détaillés (4-6 phrases chacun)
+3. Points clés synthétisés en bullet points pour les données chiffrées
+4. Paragraphe de transition ou conclusion (2-3 phrases) avant la section suivante
 
-CONTEXTE:
-{context[:4000]}
+EXIGENCES DE RÉDACTION:
+- Minimum 60% de contenu en paragraphes narratifs complets
+- Maximum 40% de contenu en bullet points (réservés aux listes de données/chiffres)
+- Chaque paragraphe doit développer une idée complète avec exemples et sources
+- Style fluide avec transitions naturelles entre paragraphes
+- Phrases variées et bien articulées (pas de style télégraphique)
+- Connecteurs logiques pour lier les idées (ainsi, en effet, par conséquent, néanmoins, etc.)
 
-GÉNÈRE RAPPORT TECHNIQUE STRATÉGIQUE (10+ pages):
+EXEMPLE DE STRUCTURE:
+### 2.1 Dimensionnement du Marché
 
-# RAPPORT TRANSFORMATION DIGITALE
+Le marché bancaire français représente aujourd'hui un écosystème dynamique en pleine transformation (INSEE, 2024). L'analyse des données récentes révèle une croissance soutenue portée par la digitalisation et l'évolution des comportements clients (Banque de France, 2024).
 
-## 🎯 VISION EXÉCUTIVE
-- Enjeux transformation [Réf. X]
-- ROI digital [Réf. X]
-- Roadmap stratégique
+L'analyse détaillée révèle plusieurs tendances structurantes qui redéfinissent le paysage concurrentiel. Les néobanques captent désormais 8% du marché des particuliers, une progression de +45% en deux ans (ACPR, 2024). Cette dynamique s'accompagne d'une consolidation du secteur traditionnel, où les cinq premières banques concentrent 65% des parts de marché (FBF, 2024).
 
-## 🔧 ÉTAT DES LIEUX TECH
-- Maturité technologique [Réf. X]
-- Gaps et opportunités [Réf. X]
-- Benchmark secteur [Réf. X]
+Ces évolutions s'accompagnent de transformations profondes des modèles économiques. L'investissement technologique représente désormais 12-15% des budgets, contre 6-8% il y a cinq ans (McKinsey, 2024). Les établissements pionniers observent une amélioration de leur ratio coût/revenu de 5-8 points (BCG, 2024).
 
-## 🚀 INNOVATION
-- Technologies clés [Réf. X]
-- Use cases business [Réf. X]
-- Investissements [Réf. X]
+**Données clés du marché:**
+- Taille: 450 Md€ de revenus (INSEE, 2024)
+- Croissance: +3.2% CAGR 2021-2024 (Banque de France, 2024)
+- Parts de marché: Top 5 = 65% (ACPR, 2024)
+- Marge nette moyenne: 28% (FBF, 2024)
 
-## 📋 PLAN D'ACTION
-- Phases transformation [Réf. X]
-- Budget et timeline [Réf. X]
-- Organisation et skills [Réf. X]
+En synthèse, le marché démontre une résilience notable face aux disruptions technologiques. Les acteurs qui réussissent combinent solidité financière historique et agilité numérique, avec des investissements tech atteignant 450-600M€ par an pour les leaders (Les Échos, 2024).
 
-Minimum 5000 mots. Référencer [Réf. X] systématiquement.""",
+1. **Executive Summary** (500-700 mots)
+   - Synthèse quantifiée : 5-8 KPIs clés avec sources APA (Auteur, Année)
+   - Top 3 recommandations avec ROI estimé et timeline précis
 
-        "retail_commerce": f"""ANALYSE RETAIL STRATÉGIQUE
+2. **Analyse Sectorielle Quantifiée** (1500-2000 mots)
+   - Dimensionnement marché avec croisement de sources :
+     * Taille actuelle en M€/M$ [sources multiples]
+     * CAGR 3 dernières années [sources croisées]
+     * Prévisions 3 prochaines années avec hypothèses [sources]
+     * Parts de marché top 5-10 acteurs avec évolution [sources]
+   - Segmentation avec données précises pour chaque segment
+   - MINIMUM 10-15 données chiffrées avec dates et sources croisées
 
-MISSION: {query}
+3. **Analyse Concurrentielle Comparative** (1200-1500 mots)
+   - Tableau comparatif détaillé : minimum 8 critères × 5 concurrents
+   - Chaque cellule doit avoir sa source
+   - Analyse forces/faiblesses basée sur données factuelles [sources]
+   - Évolution parts de marché sur 2-3 ans
 
-CONTEXTE:
-{context[:4000]}
+4. **Recommandations Stratégiques Chiffrées** (1500-2000 mots)
+   - CHAQUE recommandation DOIT inclure :
+     * Investissement requis avec fourchette [sources benchmarks]
+     * ROI estimé avec calcul détaillé [sources méthodologie]
+     * Timeline précis (semaines/mois)
+     * Risques quantifiés (probabilité % + impact €)
+     * KPIs de suivi (minimum 3 par recommandation)
 
-GÉNÈRE RAPPORT RETAIL COMPLET (10+ pages):
+5. **Projections Financières et Scénarios** (1000-1200 mots)
+   - 3 scénarios OBLIGATOIRES avec modélisation complète :
+     * Optimiste : hypothèses + 3-5 drivers clés avec impact %
+     * Central : hypothèses baseline avec sources
+     * Pessimiste : hypothèses + risques quantifiés
+   - Tableau de synthèse comparatif des 3 scénarios
+   - Analyse de sensibilité sur 2-3 variables clés
 
-# RAPPORT STRATÉGIE RETAIL
+6. **Sources Bibliographiques Organisées** (40-60 sources MINIMUM)
+   - Catégorisées : Institutionnelles / Études / Presse / Réglementaires
 
-## 🎯 SYNTHÈSE RETAIL
-- Tendances marché [Réf. X]
-- Transformation omnicanal [Réf. X]
-- Stratégies gagnantes
+## Impératifs qualité STRICTS
 
-## 🛍️ MARCHÉ ET CLIENTS
-- Évolution consommation [Réf. X]
-- Segments clients [Réf. X]
-- Parcours d'achat [Réf. X]
+✅ QUANTIFICATION SYSTÉMATIQUE :
+- MINIMUM 20-25 données chiffrées dans le rapport
+- Chaque chiffre avec source ET date
+- Comparaisons temporelles (évolution sur 2-3 ans)
+- Benchmarks internationaux quand pertinent
 
-## 🏪 CONCURRENCE
-- Players traditionnels vs pure players [Réf. X]
-- Innovations retail [Réf. X]
-- Différenciation [Réf. X]
+✅ CROISEMENT DE SOURCES :
+- Données importantes confirmées par 2-3 sources en format APA: (Source1, 2024; Source2, 2024)
+- Mention des divergences : "varie entre X (Source1, 2024) et Y (Source2, 2024)"
+- Privilégier convergence de sources institutionnelles
 
-## 💡 RECOMMANDATIONS
-- Stratégie omnicanal [Réf. X]
-- Technologies retail [Réf. X]
-- Plan déploiement [Réf. X]
+✅ PRÉCISION TEMPORELLE :
+- Toujours date avec citation APA: "En 2024 (INSEE, 2024)", "Sur 2022-2024 (Banque de France, 2024)"
+- Distinguer historique, actuel, projections
+- Périmètre avec sources: "En France (INSEE, 2024)", "Europe (BCE, 2024)"
 
-Minimum 5000 mots. Citer [Réf. X] pour données factuelles."""
+✅ TABLEAUX COMPARATIFS :
+- MINIMUM 3 tableaux dans le rapport
+- Toutes cellules sourcées
+- Minimum 3 colonnes × 5 lignes
+
+✅ GRAPHIQUES ET VISUALISATIONS :
+- Inclure 2-4 graphiques pertinents pour illustrer les données clés
+- Format markdown pour graphiques:
+```chart
+type: bar|line|pie
+title: Titre du graphique
+data: {{labels: ["Label1", "Label2", "Label3"], values: [valeur1, valeur2, valeur3]}}
+source: (Auteur, Année)
+```
+- Types de graphiques appropriés:
+  * bar: comparaisons entre catégories, parts de marché
+  * line: évolutions temporelles, tendances
+  * pie: répartitions, pourcentages
+- Chaque graphique doit avoir une source APA
+
+Génère maintenant ce rapport ultra-documenté et précis :""",
+
+        "tech_digital": f"""Tu es un consultant BCG expert en transformation digitale.
+
+**MISSION** : {query}
+
+**CONTEXTE** : {context[:5000]}
+
+**FORMAT** : Rapport stratégique professionnel (6000-8000 mots) avec :
+
+## EXIGENCES SOURCES (TOUS RAPPORTS) :
+- MINIMUM 40-60 sources variées et approfondies
+- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+- Utilise recherche web Perplexity exhaustive pour données actuelles
+
+## Structure Obligatoire avec Numérotation Hiérarchique
+
+IMPORTANT: Tous les titres doivent être numérotés hiérarchiquement:
+- Niveau ## : 1, 2, 3, 4, etc.
+- Niveau ### : 1.1, 1.2, 2.1, 2.2, etc.
+- Niveau #### : 1.1.1, 1.1.2, 2.1.1, etc.
+
+Exemple:
+## 1. Vision Exécutive
+### 1.1 Enjeux Transformation
+### 1.2 ROI Estimé
+
+## 2. État des Lieux Tech
+### 2.1 Maturité Digitale
+#### 2.1.1 Score Global
+#### 2.1.2 Analyse Détaillée
+
+## Style Rédactionnel - Contenu Enrichi
+
+IMPORTANT: Chaque section doit alterner paragraphes narratifs et bullet points:
+
+STRUCTURE REQUISE POUR CHAQUE SECTION:
+1. Paragraphe d'introduction (3-5 phrases) qui contextualise le sujet
+2. Développement avec 2-3 paragraphes narratifs détaillés (4-6 phrases chacun)
+3. Points clés synthétisés en bullet points pour les données chiffrées
+4. Paragraphe de transition ou conclusion (2-3 phrases) avant la section suivante
+
+EXIGENCES DE RÉDACTION:
+- Minimum 60% de contenu en paragraphes narratifs complets
+- Maximum 40% de contenu en bullet points (réservés aux listes de données/chiffres)
+- Chaque paragraphe doit développer une idée complète avec exemples et sources
+- Style fluide avec transitions naturelles entre paragraphes
+- Phrases variées et bien articulées (pas de style télégraphique)
+- Connecteurs logiques pour lier les idées (ainsi, en effet, par conséquent, néanmoins, etc.)
+
+EXEMPLE DE STRUCTURE:
+### 2.1 Transformation Digitale
+
+La transformation digitale du secteur redéfinit aujourd'hui les standards de compétitivité (Gartner, 2024). Les entreprises leaders investissent massivement dans l'IA et l'automatisation, avec des budgets moyens en hausse de 35% sur deux ans (IDC, 2024).
+
+L'adoption des technologies cloud computing s'accélère de manière exponentielle dans tous les secteurs. Les migrations vers le cloud hybride concernent désormais 68% des grandes entreprises, contre 42% en 2022 (Forrester, 2024). Cette évolution permet des gains de flexibilité et d'efficacité opérationnelle mesurables, avec une réduction des coûts IT de 20-30% en moyenne (McKinsey Digital, 2024).
+
+Les investissements dans l'IA générative explosent littéralement depuis 2023. Les dépenses mondiales atteignent 156 Md$ en 2024, soit une croissance de +78% en un an (IDC, 2024). Les cas d'usage se multiplient : support client automatisé, génération de code, analyse prédictive, personnalisation marketing (Gartner, 2024).
+
+**Indicateurs clés transformation:**
+- Budget IT moyen: 4.5% du CA (+0.8pt vs 2022) (Gartner, 2024)
+- Adoption cloud: 68% grandes entreprises (Forrester, 2024)
+- ROI moyen IA: 18-25% première année (McKinsey, 2024)
+- Temps déploiement: -40% avec DevOps (IDC, 2024)
+
+En conclusion, la transformation digitale n'est plus une option mais un impératif stratégique. Les organisations qui excellent combinent vision long terme et capacité d'exécution agile, avec des cycles d'innovation réduits à 3-6 mois contre 12-18 mois historiquement (BCG, 2024).
+
+1. **Vision Exécutive** (500-700 mots)
+   - Enjeux transformation avec chiffres clés [sources multiples]
+   - ROI estimé avec calcul détaillé [benchmarks sectoriels]
+   - Roadmap high-level avec jalons quantifiés
+
+2. **État des Lieux Tech Quantifié** (1500-2000 mots)
+   - Maturité digitale : score/10 sur 5-8 dimensions [sources]
+   - Gaps identifiés avec impact business chiffré [données]
+   - Benchmarks sectoriels et internationaux [sources croisées]
+   - MINIMUM 10 KPIs tech avec comparaisons
+
+3. **Innovation et Technologies** (1200-1500 mots)
+   - Technologies clés avec taux d'adoption marché [sources]
+   - Use cases business avec ROI par use case [benchmarks]
+   - Investissements requis par technologie [études]
+   - Tableau comparatif technologies (minimum 8 critères × 4 techs)
+
+4. **Plan d'Action Détaillé** (1500-2000 mots)
+   - Phases avec timeline précis (semaines/mois)
+   - Budget détaillé par phase et poste [benchmarks]
+   - Organisation : FTE requis par compétence [données marché]
+   - Risques quantifiés avec mitigation [probabilités]
+   - MINIMUM 3 tableaux : timeline, budget, ressources
+
+5. **Projections et Business Case** (800-1000 mots)
+   - 3 scénarios ROI (optimiste/central/pessimiste)
+   - KPIs de suivi avec targets chiffrés
+   - Analyse de sensibilité
+
+6. **Sources** (40-60 sources tech récentes)
+
+EXIGENCES: MINIMUM 25 données chiffrées, 3+ tableaux, croisement sources format APA (Auteur, Année)
+
+Génère maintenant ce rapport :""",
+
+        "retail_commerce": f"""Tu es un consultant Bain expert en retail et commerce.
+
+**MISSION** : {query}
+
+**CONTEXTE** : {context[:5000]}
+
+**FORMAT** : Rapport stratégique professionnel (6000-8000 mots) avec :
+
+## EXIGENCES SOURCES (TOUS RAPPORTS) :
+- MINIMUM 40-60 sources variées et approfondies
+- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+- Utilise recherche web Perplexity exhaustive pour données actuelles
+
+## Structure Obligatoire avec Numérotation Hiérarchique
+
+IMPORTANT: Tous les titres doivent être numérotés hiérarchiquement:
+- Niveau ## : 1, 2, 3, 4, etc.
+- Niveau ### : 1.1, 1.2, 2.1, 2.2, etc.
+- Niveau #### : 1.1.1, 1.1.2, 2.1.1, etc.
+
+Exemple:
+## 1. Synthèse Retail Quantifiée
+### 1.1 Tendances Marché
+### 1.2 Stratégies Gagnantes
+
+## 2. Marché et Consommateurs
+### 2.1 Évolution Consommation
+#### 2.1.1 Chiffres Clés
+#### 2.1.2 Segments Clients
+
+## Style Rédactionnel - Contenu Enrichi
+
+IMPORTANT: Chaque section doit alterner paragraphes narratifs et bullet points:
+
+STRUCTURE REQUISE POUR CHAQUE SECTION:
+1. Paragraphe d'introduction (3-5 phrases) qui contextualise le sujet
+2. Développement avec 2-3 paragraphes narratifs détaillés (4-6 phrases chacun)
+3. Points clés synthétisés en bullet points pour les données chiffrées
+4. Paragraphe de transition ou conclusion (2-3 phrases) avant la section suivante
+
+EXIGENCES DE RÉDACTION:
+- Minimum 60% de contenu en paragraphes narratifs complets
+- Maximum 40% de contenu en bullet points (réservés aux listes de données/chiffres)
+- Chaque paragraphe doit développer une idée complète avec exemples et sources
+- Style fluide avec transitions naturelles entre paragraphes
+- Phrases variées et bien articulées (pas de style télégraphique)
+- Connecteurs logiques pour lier les idées (ainsi, en effet, par conséquent, néanmoins, etc.)
+
+EXEMPLE DE STRUCTURE:
+### 2.1 Évolution Comportements Consommateurs
+
+Le paysage de la consommation française connaît une mutation profonde accélérée par le digital (FEVAD, 2024). Les comportements d'achat se fragmentent entre canaux physiques et digitaux, créant de nouveaux parcours clients hybrides qui défient les modèles traditionnels (Nielsen, 2024).
+
+L'e-commerce poursuit sa croissance soutenue avec un taux de pénétration atteignant 15.2% du commerce de détail total en 2024, contre 13.4% en 2023 (FEVAD, 2024). Cette progression s'accompagne d'une sophistication des attentes : livraison express, personnalisation de l'offre, expérience omnicanale fluide (Kantar, 2024). Les retailers qui excellent sur ces dimensions capturent 25-30% de parts de marché supplémentaires (McKinsey, 2024).
+
+La dynamique retail s'oriente vers des modèles phygitaux intégrant le meilleur des deux mondes. Les magasins physiques évoluent en showrooms expérientiels avec click & collect, essayage virtuel, et conseillers augmentés par l'IA (LSA, 2024). Les investissements dans ces technologies atteignent 8-12% des budgets marketing des leaders, générant une hausse de trafic de 15-20% (Retail Detail, 2024).
+
+**Indicateurs clés e-commerce:**
+- CA e-commerce France: 156 Md€ (+11% vs 2023) (FEVAD, 2024)
+- Taux pénétration: 15.2% du retail total (FEVAD, 2024)
+- Panier moyen: 68€ (+3€ vs 2023) (Nielsen, 2024)
+- Livraison J+1: 78% des sites top 100 (Kantar, 2024)
+
+En synthèse, le retail français bascule vers des modèles hybrides où l'excellence opérationnelle digitale devient aussi critique que la présence physique. Les enseignes gagnantes investissent 150-250M€ dans leur transformation omnicanale (Les Échos, 2024).
+
+1. **Synthèse Retail Quantifiée** (500-700 mots)
+   - Tendances marché avec chiffres clés [sources croisées]
+   - Stratégies gagnantes avec ROI moyen [benchmarks]
+   - Top 3 opportunités quantifiées
+
+2. **Marché et Consommateurs** (1500-2000 mots)
+   - Évolution consommation : chiffres sur 3 ans [INSEE, panels]
+   - Segments clients avec tailles et potentiel [sources]
+   - Parcours d'achat avec taux de conversion par canal [études]
+   - Panier moyen et fréquence par segment [données]
+   - MINIMUM 12 KPIs clients/marché avec sources
+
+3. **Analyse Concurrentielle Retail** (1200-1500 mots)
+   - Tableau comparatif : 8 critères × 5-8 acteurs
+   - Players traditionnels vs pure players (CA, croissance, marges)
+   - Innovations retail avec impact business [cas d'usage]
+   - Parts de marché online vs offline [sources]
+
+4. **Recommandations Omnicanal** (1500-2000 mots)
+   - Stratégie omnicanal avec investissements par canal
+   - Technologies retail (coûts, ROI, timeline)
+   - Plan de déploiement phasé avec KPIs
+   - Quick wins vs projets structurants
+   - MINIMUM 3 tableaux : investissements, ROI, roadmap
+
+5. **Business Case et Projections** (800-1000 mots)
+   - 3 scénarios (pénétration marché, CA, rentabilité)
+   - Analyse de sensibilité prix/volume
+   - KPIs de suivi omnicanal
+
+6. **Sources** (40-60 sources retail/e-commerce)
+
+EXIGENCES: MINIMUM 25 données chiffrées, 3+ tableaux, sources format APA (Auteur, Année)
+
+Génère maintenant ce rapport :"""
     }
     
     return prompt_templates.get(business_type, prompt_templates["finance_banque"])
 
-def call_perplexity_safe(prompt: str, business_type: str, rag_context: str = "") -> str:
+def call_perplexity_safe(
+    prompt: str, 
+    business_type: str, 
+    rag_context: str = "",
+    task_type: str = "chat"  # NOUVEAU PARAMÈTRE
+) -> str:
     """Appel Perplexity sécurisé avec RAG interne et recherche web"""
     try:
         if not PERPLEXITY_API_KEY or PERPLEXITY_API_KEY == "":
             return "⚠️ **Configuration Perplexity requise**\n\nVeuillez configurer la variable PERPLEXITY_API_KEY dans votre fichier .env"
         
-        # Vérifier OpenAI SDK (compatible Perplexity)
-        if not OPENAI_AVAILABLE:
-            return "❌ **Module OpenAI manquant**\n\nVeuillez installer: pip install openai"
+        # Vérifier SDK OpenAI (compatible Perplexity)
+        if not OPENAI_SDK_AVAILABLE:
+            return "❌ **SDK OpenAI manquant**\n\nCe SDK est requis pour la compatibilité avec Perplexity API.\nVeuillez installer: pip install openai"
+        
+        # Sélection dynamique du modèle selon la tâche
+        selected_model = get_model_for_task(task_type)
+        
+        # Ajuster max_tokens selon le modèle
+        # sonar-pro (12000 tokens) est utilisé pour TOUS les rapports (40-60 sources)
+        max_tokens_config = {
+            "sonar": 8000,        # +2000 pour chat enrichi avec paragraphes
+            "sonar-pro": 16000,   # +4000 pour rapports détaillés avec contenu narratif
+            "sonar-reasoning": 20000  # +4000 pour analyses profondes
+        }
+        max_tokens = max_tokens_config.get(selected_model, 6000)
+        
+        logger.info(f"Using model: {selected_model} for task: {task_type} (max_tokens: {max_tokens})")
         
         # System prompts avec instructions de citation APA + URLs (style Perplexity)
         system_prompts = {
             "finance_banque": """Tu es un consultant senior McKinsey spécialisé en stratégie bancaire utilisant Perplexity AI. 
                               Génère des rapports structurés avec analyses quantifiées et recommandations actionnables.
                               
-                              RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
-                              - Utilise ta recherche web native Perplexity
-                              - Cite TOUTES les sources avec [1], [2], [3], etc. après chaque information
-                              - En fin de réponse, ajoute une section "## 📚 Sources" avec bibliographie APA complète
-                              - Format: [numéro] Auteur/Organisation. (Année). Titre. URL_complète_cliquable
-                              - Exemple inline: "Le marché croît de 15% [1]"
-                              - Exemple source: "[1] INSEE. (2024). Croissance économique française. https://www.insee.fr/rapport-2024"
-                              - Minimum 5 sources variées et récentes (moins de 2 ans)""",
+                              RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
+                              - Recherche web Perplexity extensive pour données actuelles et vérifiées
+                              - MINIMUM 40-60 sources variées et approfondies, réparties comme suit :
+                                * 24-36 sources institutionnelles (INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA)
+                                * 8-12 sources académiques ou études sectorielles (McKinsey, BCG, Bain, think tanks)
+                                * 6-9 sources média spécialisé (Les Échos, Financial Times, Bloomberg, Reuters)
+                                * 2-3 sources réglementaires et complémentaires
+                              - Cite TOUTES les sources en format APA directement dans le texte: (Auteur, Année) ou (Organisation, Année)
+                              - CROISE systématiquement les sources : compare les chiffres de 2-3 sources différentes
+                              - Exemple: "Le marché croît de 15% selon l'INSEE (INSEE, 2024), confirmé par la Banque de France à 14,8% (Banque de France, 2024)"
+                              - En fin de réponse, section "## 📚 Références Bibliographiques" avec bibliographie APA complète organisée par type
+                              - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
+                              - Sources datant de moins de 18 mois prioritaires (sauf références historiques)
+                              - Privilégier sources françaises pour contexte national, sources internationales pour comparaisons
+                              
+                              HIÉRARCHIE SOURCES OBLIGATOIRE :
+                              - 60% institutionnelles : insee.fr, banque-france.fr, acpr.banque-france.fr, amf-france.org, ministères
+                              - 20% académiques : mckinsey.com, bcg.com, bain.com, ofce.sciences-po.fr, think tanks
+                              - 15% média réputé : lesechos.fr, ft.com, bloomberg.com, reuters.com, latribune.fr
+                              - 5% autres vérifiées et pertinentes
+                              
+                              DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés, sources douteuses""",
                               
             "tech_digital": """Tu es un consultant BCG expert en transformation digitale utilisant Perplexity AI. 
                              Génère des analyses techniques détaillées avec business case et ROI.
                              
-                             RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
-                             - Recherche web native Perplexity pour données actuelles
-                             - Citations [1], [2], [3]... immédiatement après chaque fait
-                             - Section finale "## 📚 Sources" au format APA avec URLs
-                             - Chaque source: [numéro] Source. (Année). Titre. URL_complète
-                             - Minimum 5 sources tech récentes et vérifiables""",
+                             RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
+                             - Recherche web Perplexity extensive pour données actuelles et vérifiées
+                             - MINIMUM 40-60 sources variées et approfondies :
+                               * 24-36 sources tech institutionnelles (Gartner, IDC, Forrester, organismes officiels)
+                               * 8-12 études sectorielles et rapports cabinets (McKinsey Digital, BCG, whitepapers)
+                               * 6-9 sources média tech spécialisé (TechCrunch, Wired, MIT Tech Review, ZDNet)
+                               * 2-3 sources académiques et complémentaires
+                             - Citations en format APA directement dans le texte: (Auteur, Année) ou (Organisation, Année)
+                             - CROISE les sources : compare chiffres de 2-3 sources avec citations
+                             - Section finale "## 📚 Références Bibliographiques" au format APA organisée par type
+                             - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
+                             - Sources <18 mois prioritaires
+                             
+                             HIÉRARCHIE SOURCES OBLIGATOIRE :
+                             - 60% institutionnelles : gartner.com, idc.com, forrester.com, organismes tech officiels
+                             - 20% académiques : mckinsey.com, bcg.com, bain.com, whitepapers recherche
+                             - 15% média tech réputé : techcrunch.com, wired.com, technologyreview.com, zdnet.com
+                             - 5% autres vérifiées
+                             
+                             DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés""",
                              
             "retail_commerce": """Tu es un consultant Bain expert en retail et commerce utilisant Perplexity AI. 
                                 Génère des analyses avec insights consommateurs et recommandations opérationnelles.
                                 
-                                RÈGLES DE CITATION OBLIGATOIRES (comme l'application Perplexity):
-                                - Utilise recherche web Perplexity pour données marché
-                                - Cite systématiquement avec [1], [2], [3]... après chaque donnée
-                                - Bibliographie finale "## 📚 Sources" format APA + URLs
-                                - Format: [numéro] Organisation. (Année). Titre. URL_cliquable
-                                - Minimum 5 sources retail/e-commerce récentes"""
+                                RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
+                                - Recherche web Perplexity extensive pour données actuelles et vérifiées
+                                - MINIMUM 40-60 sources variées et approfondies :
+                                  * 24-36 sources retail institutionnelles (FEVAD, FCD, Nielsen, Kantar, INSEE, observatoires)
+                                  * 8-12 études e-commerce et comportements consommateurs (cabinets, think tanks)
+                                  * 6-9 sources média retail spécialisé (LSA, e-marketing.fr, Retail Detail)
+                                  * 2-3 sources tendances, innovation et complémentaires
+                                - Cite systématiquement en format APA: (Auteur, Année) ou (Organisation, Année) après chaque donnée
+                                - CROISE les sources pour valider les tendances avec citations APA
+                                - Bibliographie finale "## 📚 Références Bibliographiques" format APA complet + URLs organisée par type
+                                - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
+                                - Sources <18 mois prioritaires pour tendances actuelles
+                                
+                                HIÉRARCHIE SOURCES OBLIGATOIRE :
+                                - 60% institutionnelles : insee.fr, fevad.com, lsa-conso.fr, credoc.fr, observatoires secteur
+                                - 20% académiques : mckinsey.com, bcg.com, bain.com, études retail spécialisées
+                                - 15% média commerce réputé : lsa-conso.fr, ecommercemag.fr, retaildive.com
+                                - 5% autres vérifiées
+                                
+                                DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés"""
         }
         
         system_prompt = system_prompts.get(business_type, system_prompts["finance_banque"])
@@ -506,41 +829,127 @@ def call_perplexity_safe(prompt: str, business_type: str, rag_context: str = "")
 
 ═══════════════════════════════════════════════════════════════
 
-INSTRUCTIONS DE RECHERCHE ET CITATION (STYLE PERPLEXITY APP):
+INSTRUCTIONS DE RECHERCHE APPROFONDIE ET MULTI-SOURCES :
 
-📌 ÉTAPE 1 - RECHERCHE WEB:
-- Utilise tes capacités de recherche web native Perplexity
-- Cherche les informations les plus récentes et pertinentes
-- Privilégie sources officielles, études, rapports institutionnels
+📌 PHASE 1 - RECHERCHE STRUCTURÉE EN 3 PHASES (40-60 sources pour TOUS les rapports) :
 
-📌 ÉTAPE 2 - RÉDACTION AVEC CITATIONS:
-- Après CHAQUE information factuelle, ajoute [numéro]
-- Ne jamais affirmer sans citer
-- Exemple: "Le marché fintech français atteint 9 milliards € [1] avec 1000+ startups [2]"
+PHASE 1A - Sources Institutionnelles (priorité absolue) :
+- INSEE, Banque de France, ACPR, AMF, ministères français
+- Autorités européennes : BCE, EBA, ESMA, Commission européenne
+- Organismes publics spécialisés (.gov, .gouv.fr, .europa.eu)
+- Données officielles, statistiques nationales, rapports publics
 
-📌 ÉTAPE 3 - BIBLIOGRAPHIE FINALE:
-- Section "## 📚 Sources" en fin de réponse
-- Format APA strict: [numéro] Auteur/Organisation. (Année). Titre complet. URL_complète
-- URLs doivent être des liens réels et cliquables
-- Minimum 5 sources, maximum 15 sources
-- Sources variées: institutionnelles, académiques, presse spécialisée
+PHASE 1B - Sources Académiques et Études :
+- Cabinets conseil : McKinsey, BCG, Bain, Deloitte, EY, PwC
+- Think tanks économiques : OFCE, Bruegel, CEPII, France Stratégie
+- Études sectorielles professionnelles (Gartner, IDC, Forrester pour tech)
+- Whitepapers recherche et rapports d'analystes
 
-EXEMPLE DE FORMAT ATTENDU:
+PHASE 1C - Média Réputé et Complémentaires :
+- Média économique réputé : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
+- Presse spécialisée sectorielle vérifiée
+- Sources complémentaires vérifiées et pertinentes
+- Éviter absolument : blogs personnels, forums, sites non vérifiés
 
-"Le secteur bancaire français compte 300 établissements [1] générant 85 milliards de revenus [2]."
+HIÉRARCHIE FINALE À RESPECTER :
+✓ 60% sources institutionnelles (priorité absolue)
+✓ 20% sources académiques et études
+✓ 15% média économique réputé
+✓ 5% autres vérifiées
 
-## 📚 Sources
-[1] ACPR. (2024). Panorama des établissements bancaires français. https://acpr.banque-france.fr/rapport-2024
-[2] FBF. (2024). Rapport annuel du secteur bancaire. https://fbf.fr/publications/rapport-annuel-2024
+Pour TOUS les rapports (40-60 sources) : 
+- Minimum 24-36 sources institutionnelles (60%)
+- Minimum 8-12 sources académiques (20%)
+- Minimum 6-9 sources média réputé (15%)
+- Minimum 2-3 sources autres vérifiées (5%)
 
-Réponds maintenant en utilisant la recherche web Perplexity et en citant TOUTES tes sources."""
+📌 PHASE 2 - CROISEMENT ET VALIDATION DES SOURCES :
+- COMPARER systématiquement les chiffres entre sources avec citations APA :
+  * Si convergence : "Le marché atteint 50M€ selon l'INSEE (INSEE, 2024) et la Banque de France (Banque de France, 2024)"
+  * Si divergence : "Le marché varie entre 45M€ (INSEE, 2024) et 52M€ (Banque de France, 2024), moyenne estimée à 48M€"
+- Identifier les sources les plus fiables (institutionnelles > média > blogs)
+- Signaler toute contradiction importante entre sources
+- Préférer moyenne de plusieurs sources plutôt qu'une seule donnée
+
+📌 PHASE 3 - RÉDACTION AVEC CITATIONS APA DENSES :
+- CHAQUE phrase contenant un fait/chiffre DOIT avoir 1-2 citations APA
+- Utiliser citations multiples pour données importantes : (Source1, 2024; Source2, 2024)
+- Ne JAMAIS affirmer sans source : "X% des entreprises..." → "X% des entreprises (Auteur, 2024)"
+- Varier les sources : éviter de tout citer depuis 1-2 sources uniquement
+
+📌 PHASE 4 - ANALYSE CRITIQUE DES DONNÉES :
+- Mentionner les limitations des données quand pertinent
+- Indiquer la date et le périmètre des études citées avec citation APA
+- Exemple: "Selon l'étude INSEE 2024 portant sur 1500 entreprises (INSEE, 2024)..."
+- Signaler si les données sont partielles, estimées ou définitives
+
+📌 PHASE 5 - BIBLIOGRAPHIE APA COMPLÈTE ET ORGANISÉE :
+Section "## 📚 Références Bibliographiques" structurée par catégorie :
+
+### Sources Institutionnelles et Statistiques
+INSEE. (2024). Panorama économique français Q3 2024. Rapport trimestriel. https://...
+Banque de France. (2024). Situation économique France. Bulletin mensuel. https://...
+
+### Études et Rapports Sectoriels
+McKinsey & Company. (2024). Transformation bancaire en France. Rapport annuel. https://...
+
+### Presse Économique Spécialisée
+Les Échos. (2024, 15 octobre). L'évolution du secteur bancaire. Article de presse. https://...
+
+### Sources Réglementaires
+ACPR. (2024). Directive consolidation bancaire. Texte officiel. https://...
+
+MINIMUM REQUIS (TOUS RAPPORTS):
+- 40-60 sources variées et approfondies
+- Répartition stricte: 60% institutionnelles, 20% académiques, 15% média, 5% autres
+- 24-36 sources instit. + 8-12 académiques + 6-9 média + 2-3 autres
+
+📌 STRUCTURE ET NUMÉROTATION:
+- TOUS les titres doivent être numérotés hiérarchiquement
+- Format: ## 1. Titre principal, ### 1.1 Sous-titre, #### 1.1.1 Sous-sous-titre
+- Numérotation cohérente et continue dans tout le rapport
+- Facilite la navigation et les références croisées
+
+📌 STYLE RÉDACTIONNEL:
+- Style naturel et professionnel comme les exemples de templates
+- Phrases claires et bien structurées (détailler autant que nécessaire pour être complet)
+- Développer les éléments importants en profondeur sans contrainte de longueur
+- Transitions naturelles entre paragraphes avec connecteurs logiques
+- Vocabulaire précis mais accessible, éviter le jargon excessif
+- Structure logique et progressive, voix active privilégiée
+- Style professionnel mais fluide et agréable à lire, pas robotique
+
+📌 CONTENU ENRICHI - PARAGRAPHES NARRATIFS OBLIGATOIRES:
+
+POUR CHAQUE SECTION/SOUS-SECTION:
+1. Paragraphe d'ouverture contextuel (3-5 phrases complètes)
+2. Corps du texte en paragraphes narratifs (minimum 2-3 paragraphes de 4-6 phrases)
+3. Bullet points uniquement pour synthétiser données chiffrées ou lister des éléments
+4. Paragraphe de transition vers section suivante (2-3 phrases)
+
+RATIO IMPÉRATIF:
+- 60-70% paragraphes narratifs avec phrases complètes
+- 30-40% bullet points pour données/listes
+- Éviter les sections composées uniquement de bullet points
+- Chaque idée importante mérite un paragraphe de développement
+
+QUALITÉ DU CONTENU:
+- Développer les analyses en profondeur
+- Expliquer les liens de causalité
+- Fournir des exemples concrets
+- Contextualiser chaque donnée chiffrée
+- Privilégier le fond sur la forme
+
+═══════════════════════════════════════════════════════════════
+
+Réponds maintenant avec recherche approfondie et croisement systématique des sources."""
         
-        # Client Perplexity (compatible OpenAI SDK)
+        # Client Perplexity utilisant le SDK OpenAI pour compatibilité
         try:
             client = OpenAI(
                 api_key=PERPLEXITY_API_KEY,
                 base_url=PERPLEXITY_BASE_URL,
-                timeout=300.0  # 5 minutes max pour rapports longs
+                timeout=600.0  # 10 minutes pour rapports longs avec paragraphes narratifs
             )
             
             # Vérifier taille prompt
@@ -549,20 +958,20 @@ Réponds maintenant en utilisant la recherche web Perplexity et en citant TOUTES
                 enhanced_prompt = enhanced_prompt[:15000] + "\n\n[...Prompt tronqué pour limites techniques. Continuer l'analyse avec les éléments disponibles...]"
             
             response = client.chat.completions.create(
-                model=PERPLEXITY_MODEL,
+                model=selected_model,  # ← Modèle dynamique
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": enhanced_prompt}
                 ],
-                temperature=0.3,
-                max_tokens=8000
+                temperature=0.2,  # Légèrement plus créatif pour paragraphes narratifs fluides
+                max_tokens=max_tokens  # ← Dynamique selon modèle
             )
             
             return response.choices[0].message.content
             
         except Exception as api_error:
-            logger.error(f"Perplexity API error: {api_error}")
-            return f"❌ **Erreur API Perplexity**\n\n{str(api_error)[:300]}\n\nVérifiez votre clé API et votre quota."
+            logger.error(f"Perplexity API error with {selected_model}: {api_error}")
+            return f"❌ **Erreur API Perplexity ({selected_model})**\n\n{str(api_error)[:300]}\n\nVérifiez votre clé API et votre quota."
         
     except Exception as e:
         logger.error(f"Critical error in Perplexity call: {e}")
@@ -571,23 +980,40 @@ Réponds maintenant en utilisant la recherche web Perplexity et en citant TOUTES
 async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None) -> AnalysisResponse:
     """Génère analyse avec gestion d'erreurs complète"""
     try:
-        logger.info(f"Starting analysis: {business_type}/{analysis_type}")
+        is_deep_analysis = "approfondi" in analysis_type.lower()
+        logger.info(f"Starting analysis: {business_type}/{analysis_type} (Deep: {is_deep_analysis})")
         
-        # 1. Recherche documents sécurisée
-        documents = search_documents_safe(query, top_k=8)
-        logger.info(f"Found {len(documents)} documents")
+        # 1. Recherche documents sécurisée (augmenté à 12 pour plus de contexte)
+        logger.info("📊 [1/5] Recherche documents RAG...")
+        documents = search_documents_safe(query, top_k=12)
+        logger.info(f"✓ [1/5] Trouvé {len(documents)} documents RAG")
         
         # 2. Formatage contexte sécurisé
+        logger.info("📝 [2/5] Formatage contexte documentaire...")
         context = format_context_safe(documents)
+        logger.info(f"✓ [2/5] Contexte formaté ({len(context)} caractères)")
         
         # 3. Création prompt optimisé
+        logger.info("🎯 [3/5] Création prompt optimisé...")
         prompt = create_optimized_prompt(business_type, analysis_type, query, context)
+        expected_sources = "60 sources" if is_deep_analysis else "40-60 sources"
+        logger.info(f"✓ [3/5] Prompt créé (type: {expected_sources})")
         
         # 4. Appel Perplexity sécurisé avec RAG
-        content = call_perplexity_safe(prompt, business_type, rag_context=context)
+        estimated_time = "90-120s" if is_deep_analysis else "45-60s"
+        logger.info(f"🌐 [4/5] Appel Perplexity API ({expected_sources}, estimation: {estimated_time})...")
+        content = call_perplexity_safe(
+            prompt, 
+            business_type, 
+            rag_context=context,
+            task_type="analysis"  # Force sonar-pro pour rapports longs
+        )
+        logger.info("✓ [4/5] Contenu généré par Perplexity")
         
         # 5. Construction réponse avec sources enrichies APA
+        logger.info("✅ [5/5] Finalisation du rapport...")
         enriched_sources = [enrich_source_with_apa(d, i+1) for i, d in enumerate(documents)]
+        logger.info(f"✓ [5/5] Rapport finalisé avec {len(enriched_sources)} sources RAG")
         
         return AnalysisResponse(
             analysis_type=analysis_type,
@@ -600,7 +1026,7 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
                 "business_type": business_type,
                 "documents_found": len(documents),
                 "analysis_length": "extended_report",
-                "model": PERPLEXITY_MODEL,
+                "model": get_model_for_task("analysis"),
                 "provider": "Perplexity AI",
                 "max_tokens": 8000,
                 "status": "success",
@@ -633,7 +1059,7 @@ async def generate_chat_response_safe(message: str, business_type: str = None, h
         # 1. Pas de recherche documents - Perplexity uniquement
         business_context = get_business_type_display_name(business_type) if business_type else "Généraliste"
         
-        # 2. Construction prompt pour Perplexity avec citations APA
+        # 2. Construction prompt pour Perplexity avec citations APA enrichies
         chat_prompt = f"""Tu es un assistant expert spécialisé {business_context} utilisant Perplexity AI.
 
 HISTORIQUE CONVERSATION:
@@ -641,20 +1067,44 @@ HISTORIQUE CONVERSATION:
 
 QUESTION: {message}
 
-INSTRUCTIONS DE RÉPONSE (STYLE PERPLEXITY APP):
-✓ Réponds de manière concise et professionnelle (2-3 paragraphes)
-✓ Utilise ta recherche web native Perplexity pour des informations actuelles
-✓ CITE SYSTÉMATIQUEMENT avec [1], [2], [3]... après chaque information factuelle
-✓ Exemple: "Le secteur croît de 12% [1] avec 500 entreprises [2]"
-✓ En fin de réponse, ajoute "## 📚 Sources" avec format APA + URLs cliquables
-✓ Format source: [numéro] Auteur. (Année). Titre. URL_complète
-✓ Minimum 3 sources vérifiables
+INSTRUCTIONS DE RÉPONSE ENRICHIE (MULTI-SOURCES):
+✓ Réponds de manière concise mais sourcée (2-4 paragraphes)
+✓ Utilise recherche web Perplexity extensive pour informations actuelles
+✓ MINIMUM 5-8 sources variées pour réponse complète
+✓ CROISE les sources : compare et valide chaque information importante
+✓ CITE SYSTÉMATIQUEMENT en format APA: (Auteur, Année) ou (Organisation, Année) après chaque fait
+✓ Pour données chiffrées : citer 2 sources si possible (Source1, 2024; Source2, 2024)
+✓ Exemple: "Le secteur croît de 12% selon l'INSEE (INSEE, 2024) et 11,5% selon la Banque de France (Banque de France, 2024), avec 500 entreprises actives (FBF, 2024)"
+✓ En fin : "## 📚 Références Bibliographiques" avec format APA complet + URLs cliquables organisé par type
+✓ Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
 
-Réponds maintenant avec recherche web Perplexity et citations complètes.
+CATÉGORIES DE SOURCES :
+- 2-3 sources institutionnelles/officielles
+- 2-3 sources études/rapports
+- 1-2 sources presse spécialisée
+
+EXIGENCE QUALITÉ :
+- Privilégier sources françaises officielles (INSEE, ministères, autorités)
+- Vérifier cohérence entre sources avant d'affirmer
+- Mentionner si sources divergent légèrement
+
+STRUCTURE ET STYLE :
+- Si réponse longue avec plusieurs sections : numéroter les titres (## 1., ## 2., ### 2.1, etc.)
+- Style naturel et professionnel, phrases claires et bien structurées
+- Détailler autant que nécessaire pour être complet et précis
+- Transitions naturelles, style fluide et agréable à lire
+- Vocabulaire accessible, éviter jargon excessif
+
+Réponds maintenant avec recherche approfondie et croisement des sources.
 """
 
         # 3. Appel Perplexity direct (pas de RAG interne)
-        response_content = call_perplexity_safe(chat_prompt, business_type or "finance_banque", rag_context="")
+        response_content = call_perplexity_safe(
+            chat_prompt, 
+            business_type or "finance_banque", 
+            rag_context="",
+            task_type="chat"  # Force sonar pour chat court
+        )
         
         return ChatResponse(
             response=response_content,
@@ -664,7 +1114,7 @@ Réponds maintenant avec recherche web Perplexity et citations complètes.
                 "message": message,
                 "business_type": business_type,
                 "documents_found": 0,  # RAG désactivé
-                "model": PERPLEXITY_MODEL,
+                "model": get_model_for_task("chat"),
                 "provider": "Perplexity AI",
                 "mode": "perplexity_web_only"
             },
@@ -689,11 +1139,11 @@ def health():
         "status": "healthy", 
         "service": "backend-intelligence-perplexity",
         "perplexity_configured": bool(PERPLEXITY_API_KEY),
-        "perplexity_model": PERPLEXITY_MODEL,
+        "perplexity_models": PERPLEXITY_MODELS,  # Multi-modèles
         "mode": "perplexity_web_only",
         "rag_internal": "disabled",
         "business_types": get_available_business_types(),
-        "version": "3.0-perplexity-web-only"
+        "version": "3.1-multi-model"
     }
 
 @app.get("/business-types")
@@ -761,30 +1211,31 @@ QUESTION: {request.message}
 
 INSTRUCTIONS DE RÉPONSE (STYLE PERPLEXITY APP):
 ✓ Réponds de manière concise et professionnelle
-✓ Recherche web native Perplexity pour informations actuelles
-✓ CITE SYSTÉMATIQUEMENT: [1], [2], [3]... après chaque fait
-✓ En fin: "## 📚 Sources" avec format APA + URLs cliquables
-✓ Format: [numéro] Auteur. (Année). Titre. URL_complète
+✓ Recherche web Perplexity pour informations actuelles
+✓ CITE SYSTÉMATIQUEMENT en format APA: (Auteur, Année) ou (Organisation, Année) après chaque fait
+✓ En fin: "## 📚 Références Bibliographiques" avec format APA complet + URLs cliquables
+✓ Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
 ✓ Minimum 3 sources vérifiables et récentes
 
 Réponds avec recherche web Perplexity et citations complètes.
 """
 
             # 2) Streaming Perplexity
-            if not PERPLEXITY_API_KEY or not OPENAI_AVAILABLE:
+            if not PERPLEXITY_API_KEY or not OPENAI_SDK_AVAILABLE:
                 # Fallback non‑bloquant
-                yield "Le streaming nécessite une configuration PERPLEXITY_API_KEY.\n"
+                yield "Le streaming nécessite une configuration PERPLEXITY_API_KEY et le SDK OpenAI.\n"
                 yield "[DONE]"
                 return
 
+            selected_model = get_model_for_task("chat")
             client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url=PERPLEXITY_BASE_URL, timeout=300.0)
             stream = client.chat.completions.create(
-                model=PERPLEXITY_MODEL,
+                model=selected_model,  # Modèle dynamique
                 messages=[
                     {"role": "system", "content": f"Assistant spécialisé {business_context}. Utilise les documents fournis en priorité."},
                     {"role": "user", "content": chat_prompt}
                 ],
-                temperature=0.3,
+                temperature=0.1,  # Réduit pour plus de précision
                 max_tokens=1500,
                 stream=True,
             )
@@ -814,7 +1265,7 @@ Réponds avec recherche web Perplexity et citations complètes.
 
 @app.get("/test-perplexity")
 async def test_perplexity():
-    """Test de connectivité Perplexity"""
+    """Test de connectivité pour tous les modèles Sonar configurés"""
     try:
         if not PERPLEXITY_API_KEY:
             return {"status": "error", "message": "PERPLEXITY_API_KEY not configured"}
@@ -822,20 +1273,34 @@ async def test_perplexity():
         client = OpenAI(
             api_key=PERPLEXITY_API_KEY,
             base_url=PERPLEXITY_BASE_URL,
-            timeout=300.0
+            timeout=30.0
         )
         
+        # Tester chaque modèle configuré
+        results = {}
+        for task_type, model_name in PERPLEXITY_MODELS.items():
+            try:
         response = client.chat.completions.create(
-            model=PERPLEXITY_MODEL,
-            messages=[{"role": "user", "content": "Hello, test simple"}],
+                    model=model_name,
+                    messages=[{"role": "user", "content": "Test"}],
             max_tokens=10
         )
+                results[task_type] = {
+                    "model": model_name,
+                    "status": "✅ OK",
+                    "response": response.choices[0].message.content[:50]
+                }
+            except Exception as e:
+                logger.error(f"Test Perplexity error: {e}")
+                results[task_type] = {
+                    "model": model_name,
+                    "status": f"❌ Error: {str(e)[:100]}"
+                }
         
         return {
             "status": "success", 
-            "message": "Perplexity API functional",
-            "model": PERPLEXITY_MODEL,
-            "response": response.choices[0].message.content
+            "models_tested": results,
+            "config": PERPLEXITY_MODELS
         }
         
     except Exception as e:
@@ -852,16 +1317,17 @@ async def diagnostics():
     }
     
     # Versions des libs clés
+    # Note: SDK OpenAI utilisé uniquement pour compatibilité avec Perplexity API
     try:
         diagnostics_result["versions"] = {
             "python": os.getenv("PYTHON_VERSION", "unknown"),
-            "openai": metadata.version("openai") if OPENAI_AVAILABLE else "not-installed",
+            "openai_sdk": metadata.version("openai") if OPENAI_SDK_AVAILABLE else "not-installed",
             "httpx": metadata.version("httpx") if "httpx" in {d.metadata["Name"].lower() for d in map(lambda n: metadata.distribution(n), metadata.packages_distributions().keys()) if False} else metadata.version("httpx")
         }
     except Exception:
         try:
             diagnostics_result["versions"] = {
-                "openai": metadata.version("openai") if OPENAI_AVAILABLE else "not-installed",
+                "openai_sdk": metadata.version("openai") if OPENAI_SDK_AVAILABLE else "not-installed",
                 "httpx": metadata.version("httpx")
             }
         except Exception as e:
@@ -882,16 +1348,25 @@ async def diagnostics():
                 base_url=PERPLEXITY_BASE_URL,
                 timeout=300.0
             )
+            # Test avec le modèle chat par défaut
+            test_model = get_model_for_task("chat")
             test_response = client.chat.completions.create(
-                model=PERPLEXITY_MODEL,
+                model=test_model,
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5
             )
-            diagnostics_result["perplexity"] = {"status": "✅ Functional", "model": PERPLEXITY_MODEL}
+            diagnostics_result["perplexity"] = {
+                "status": "✅ Functional", 
+                "models": PERPLEXITY_MODELS,
+                "test_model": test_model
+            }
         else:
-            diagnostics_result["perplexity"] = {"status": "❌ Not configured", "model": None}
+            diagnostics_result["perplexity"] = {"status": "❌ Not configured", "models": None}
     except Exception as e:
-        diagnostics_result["perplexity"] = {"status": f"❌ Error: {str(e)[:100]}", "model": PERPLEXITY_MODEL}
+        diagnostics_result["perplexity"] = {
+            "status": f"❌ Error: {str(e)[:100]}", 
+            "models": PERPLEXITY_MODELS
+        }
     
     # Test Vector Service
     try:

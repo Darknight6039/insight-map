@@ -63,6 +63,14 @@ const analysisTypes = [
     icon: FileText,
     color: 'from-yellow-500 to-amber-500',
     business: ['retail_commerce', 'finance_banque', 'tech_digital']
+  },
+  {
+    id: 'analyse_approfondie',
+    name: 'Analyse Approfondie',
+    description: 'Rapport exhaustif avec 60 sources (8000-10000 mots)',
+    icon: FileText,
+    color: 'from-indigo-500 to-blue-500',
+    business: ['finance_banque', 'tech_digital', 'retail_commerce']
   }
 ]
 

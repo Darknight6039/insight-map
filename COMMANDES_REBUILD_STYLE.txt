@@ -1,0 +1,158 @@
+═══════════════════════════════════════════════════════════════════════════
+🚀 COMMANDES DE REBUILD - STYLE TEMPLATE AXIAL V4.2
+═══════════════════════════════════════════════════════════════════════════
+
+📋 EXÉCUTER CES COMMANDES DANS VOTRE TERMINAL (pas dans Cursor)
+
+1️⃣ ARRÊTER LES SERVICES
+─────────────────────────────────────────────────────────────────────────
+cd /Users/isaiaebongue/insight-mvp
+docker compose stop backend-service report-service
+
+
+2️⃣ REBUILD LES IMAGES
+─────────────────────────────────────────────────────────────────────────
+docker compose build --no-cache backend-service
+docker compose build --no-cache report-service
+
+
+3️⃣ REDÉMARRER LES SERVICES
+─────────────────────────────────────────────────────────────────────────
+docker compose up -d backend-service report-service
+
+
+4️⃣ ATTENDRE LE DÉMARRAGE (30 secondes)
+─────────────────────────────────────────────────────────────────────────
+sleep 30
+
+
+5️⃣ VÉRIFIER LE FONCTIONNEMENT
+─────────────────────────────────────────────────────────────────────────
+
+# Health check backend
+curl http://localhost:8006/health
+
+# Health check report
+curl http://localhost:8007/health
+
+# Test configuration Perplexity
+curl http://localhost:8006/test-perplexity
+
+
+6️⃣ SURVEILLER LES LOGS
+─────────────────────────────────────────────────────────────────────────
+
+# Logs en temps réel
+docker compose logs -f backend-service report-service
+
+# Rechercher max_tokens
+docker compose logs backend-service | grep "max_tokens"
+
+# Rechercher modèle utilisé
+docker compose logs backend-service | grep "Using model"
+
+
+═══════════════════════════════════════════════════════════════════════════
+✅ MODIFICATIONS APPLIQUÉES
+═══════════════════════════════════════════════════════════════════════════
+
+BACKEND SERVICE:
+✓ Max tokens: sonar 8000, sonar-pro 16000, sonar-reasoning 20000
+✓ Timeout: 600s (10 minutes)
+✓ Température: 0.2 (créativité)
+✓ Instructions paragraphes: 60% narratif + 40% bullets
+✓ 3 templates métier enrichis avec exemples détaillés
+
+REPORT SERVICE:
+✓ Titres en NOIR (#000000) alignés à gauche
+✓ Texte en NOIR pur (10.5pt)
+✓ Filigrane AXIAL visible (15% opacité)
+✓ Fond bleu/gris clair (#E8EEF7)
+✓ Footer avec bande bleue et texte blanc
+✓ Marges optimisées (2cm top, 1.5cm bottom)
+
+
+═══════════════════════════════════════════════════════════════════════════
+🎯 TEST VALIDATION
+═══════════════════════════════════════════════════════════════════════════
+
+1. Aller sur http://localhost:3000 (OpenWebUI)
+
+2. Générer un rapport:
+   - Type: Finance Banque
+   - Analyse: Synthèse Executive
+   - Query: "Analyse du marché bancaire français 2025"
+
+3. Vérifier le contenu généré:
+   ✓ Paragraphes narratifs développés (60%)
+   ✓ Bullet points pour données (40%)
+   ✓ Style fluide et transitions naturelles
+   ✓ 40-60 sources avec citations APA
+
+4. Exporter en PDF et vérifier:
+   ✓ Titres en NOIR alignés à gauche
+   ✓ Texte en NOIR sur fond bleu/gris clair
+   ✓ Filigrane AXIAL bien visible
+   ✓ Footer avec bande bleue: "© AXIAL 2025. Tous droits réservés..."
+   ✓ Numérotation hiérarchique (1., 1.1, 1.1.1)
+   ✓ Citations APA dans le texte (Auteur, Année)
+   ✓ Sources avec URLs cliquables en bleu
+   ✓ Style identique aux templates de référence
+
+
+═══════════════════════════════════════════════════════════════════════════
+📊 COMMANDE TOUT-EN-UN
+═══════════════════════════════════════════════════════════════════════════
+
+Copier-coller cette commande unique dans votre terminal:
+
+cd /Users/isaiaebongue/insight-mvp && \
+docker compose stop backend-service report-service && \
+docker compose build --no-cache backend-service report-service && \
+docker compose up -d backend-service report-service && \
+echo "⏳ Attente démarrage services..." && sleep 30 && \
+echo "✅ Test backend:" && curl -s http://localhost:8006/health | grep -o '"status":"[^"]*"' && \
+echo "✅ Test report:" && curl -s http://localhost:8007/health | grep -o '"status":"[^"]*"' && \
+echo "🎉 Déploiement terminé!"
+
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 EN CAS DE PROBLÈME
+═══════════════════════════════════════════════════════════════════════════
+
+# Voir les logs d'erreur backend
+docker compose logs --tail=100 backend-service
+
+# Voir les logs d'erreur report
+docker compose logs --tail=100 report-service
+
+# Redémarrer si besoin
+docker compose restart backend-service report-service
+
+# Rebuild complet si problème persistant
+docker compose down
+docker compose up -d
+
+
+═══════════════════════════════════════════════════════════════════════════
+📚 DOCUMENTATION
+═══════════════════════════════════════════════════════════════════════════
+
+- Style Template AXIAL: README_STYLE_TEMPLATE.md
+- Citations APA & Graphiques: README_CHARTS_APA.md
+- Configuration modèles: README_MODELES.md
+- Script complet: rebuild_rich_content.sh
+
+
+═══════════════════════════════════════════════════════════════════════════
+✨ BON À SAVOIR
+═══════════════════════════════════════════════════════════════════════════
+
+• Les rapports prendront 20-30% plus de temps (contenu plus riche)
+• Max 10 minutes pour rapports approfondis 60 sources
+• Le PDF final sera visuellement IDENTIQUE aux templates AXIAL
+• Filigrane bien visible pour authenticité professionnelle
+• Footer institutionnel avec copyright et URL
+
+═══════════════════════════════════════════════════════════════════════════
+

@@ -1,0 +1,109 @@
+═══════════════════════════════════════════════════════════════
+🚀 DÉPLOIEMENT RAPPORTS AMÉLIORÉS V3.2
+═══════════════════════════════════════════════════════════════
+
+📋 TOUTES LES AMÉLIORATIONS SONT DÉJÀ IMPLÉMENTÉES DANS LE CODE
+   Il suffit de rebuilder et redémarrer le service backend
+
+═══════════════════════════════════════════════════════════════
+OPTION 1 : SCRIPT AUTOMATIQUE (RECOMMANDÉ)
+═══════════════════════════════════════════════════════════════
+
+cd /Users/isaiaebongue/insight-mvp
+./rebuild_and_test.sh
+
+✅ Ce script fait tout automatiquement :
+   - Rebuild backend-service
+   - Redémarrage
+   - Health check
+   - Test des 3 modèles Sonar
+
+═══════════════════════════════════════════════════════════════
+OPTION 2 : COMMANDES MANUELLES
+═══════════════════════════════════════════════════════════════
+
+# 1. Aller dans le dossier
+cd /Users/isaiaebongue/insight-mvp
+
+# 2. Rebuild backend-service
+docker compose build backend-service
+
+# 3. Redémarrer le service
+docker compose up -d backend-service
+
+# 4. Attendre démarrage (10 secondes)
+sleep 10
+
+# 5. Vérifier santé
+curl -s http://localhost:8006/health | jq '.'
+
+# 6. Tester les modèles
+curl -s http://localhost:8006/test-perplexity | jq '.'
+
+═══════════════════════════════════════════════════════════════
+TEST GÉNÉRATION RAPPORT
+═══════════════════════════════════════════════════════════════
+
+# Générer un rapport test
+curl -X POST http://localhost:8006/extended-analysis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "business_type": "finance_banque",
+    "analysis_type": "synthese_executive",
+    "query": "Analyse du marché bancaire français 2024"
+  }' > test_rapport.json
+
+# Vérifier qualité
+echo "Nombre de mots : $(cat test_rapport.json | jq -r '.content' | wc -w)"
+echo "Nombre de sources citées : $(cat test_rapport.json | jq -r '.content' | grep -o '\[1\]' | wc -l)"
+
+✅ ATTENDU :
+   - 6000-8000 mots
+   - 30+ citations
+   - 15-25 sources dans bibliographie
+
+═══════════════════════════════════════════════════════════════
+MONITORING EN TEMPS RÉEL
+═══════════════════════════════════════════════════════════════
+
+# Suivre les logs
+docker compose logs -f backend-service | grep -E "Using model|sources"
+
+✅ Patterns attendus :
+   - "Using model: sonar-pro for task: analysis (max_tokens: 12000)"
+   - "Using model: sonar for task: chat (max_tokens: 6000)"
+
+═══════════════════════════════════════════════════════════════
+AMÉIORATIONS APPLIQUÉES (DÉJÀ DANS LE CODE)
+═══════════════════════════════════════════════════════════════
+
+✅ Tokens max augmentés : sonar 6000, sonar-pro 12000 (+50%)
+✅ Sources minimum : 15-25 au lieu de 5 (+200-400%)
+✅ Contexte RAG : 5000 chars au lieu de 3000 (+67%)
+✅ Documents RAG : 12 au lieu de 8 (+50%)
+✅ Chat sources : 5-8 au lieu de 3 (+67-167%)
+✅ Température : 0.1 au lieu de 0.3 (précision max)
+✅ Croisement sources : obligatoire
+✅ Données chiffrées : 30+ minimum
+✅ Tableaux : 3+ minimum
+✅ Longueur rapports : 6000-8000 mots
+
+═══════════════════════════════════════════════════════════════
+DOCUMENTATION
+═══════════════════════════════════════════════════════════════
+
+📄 AMELIORATIONS_RAPPORTS_V3.2.md  → Documentation exhaustive
+📄 GUIDE_RAPIDE_V3.2.md            → Guide d'utilisation
+📄 multi-model-so.plan.md          → Plan d'implémentation
+📄 rebuild_and_test.sh             → Script de déploiement
+
+═══════════════════════════════════════════════════════════════
+🎯 PRÊT À DÉPLOYER
+═══════════════════════════════════════════════════════════════
+
+Exécutez simplement :
+  ./rebuild_and_test.sh
+
+Ou manuellement :
+  docker compose build backend-service && docker compose up -d backend-service
+

@@ -1,60 +1,212 @@
-=================================================================
-🚀 COPIER-COLLER CES COMMANDES DANS VOTRE TERMINAL
-=================================================================
+════════════════════════════════════════════════════════════════════════════
+🚀 COMMANDES À EXÉCUTER DANS VOTRE TERMINAL MACOS
+════════════════════════════════════════════════════════════════════════════
 
-# 1. Aller dans le dossier du projet
+⚠️ IMPORTANT: 
+- N'UTILISEZ PAS le terminal Cursor
+- Ouvrez Terminal.app ou iTerm2 sur macOS
+- Docker doit être lancé (icône Docker dans la barre de menu)
+
+════════════════════════════════════════════════════════════════════════════
+OPTION 1: SCRIPT AUTOMATIQUE (RECOMMANDÉ)
+════════════════════════════════════════════════════════════════════════════
+
+Copier-coller cette commande unique dans votre terminal macOS:
+
+/Users/isaiaebongue/insight-mvp/REBUILD_MAINTENANT.sh
+
+
+════════════════════════════════════════════════════════════════════════════
+OPTION 2: COMMANDES MANUELLES ÉTAPE PAR ÉTAPE
+════════════════════════════════════════════════════════════════════════════
+
+Si vous préférez exécuter les commandes une par une, suivez ces étapes:
+
+
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 1: Aller dans le répertoire du projet
+─────────────────────────────────────────────────────────────────────────────
+
 cd /Users/isaiaebongue/insight-mvp
 
-# 2. Arrêter les conteneurs existants
-docker compose down
 
-# 3. Reconstruire les images avec Perplexity (IMPORTANT!)
-docker compose build --no-cache backend-service rag-service
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 2: Arrêter les services actuels
+─────────────────────────────────────────────────────────────────────────────
 
-# 4. Démarrer tous les services
-docker compose up -d
+docker compose stop backend-service report-service
 
-# 5. Attendre 30 secondes que tout démarre
-echo "⏳ Attente du démarrage des services..."
+
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 3: Rebuild backend-service (contenu enrichi)
+─────────────────────────────────────────────────────────────────────────────
+
+docker compose build --no-cache backend-service
+
+
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 4: Rebuild report-service (style template AXIAL)
+─────────────────────────────────────────────────────────────────────────────
+
+docker compose build --no-cache report-service
+
+
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 5: Redémarrer les services
+─────────────────────────────────────────────────────────────────────────────
+
+docker compose up -d backend-service report-service
+
+
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 6: Attendre le démarrage (30 secondes)
+─────────────────────────────────────────────────────────────────────────────
+
 sleep 30
 
-# 6. Vérifier le status
-docker compose ps
 
-# 7. Test de santé
-echo ""
-echo "🧪 Test du backend avec Perplexity..."
+─────────────────────────────────────────────────────────────────────────────
+ÉTAPE 7: Vérifier que tout fonctionne
+─────────────────────────────────────────────────────────────────────────────
+
+# Test backend
 curl http://localhost:8006/health
 
-# 8. Test Perplexity direct
-echo ""
-echo "🧪 Test de l'API Perplexity..."
-curl http://localhost:8006/test-perplexity
+# Test report
+curl http://localhost:8007/health
 
-# 9. Voir les logs (optionnel)
-# docker compose logs -f backend-service
 
-=================================================================
-✅ COMMANDE RAPIDE TOUT-EN-UN (Alternative)
-=================================================================
+════════════════════════════════════════════════════════════════════════════
+COMMANDE TOUT-EN-UN (COPIER-COLLER)
+════════════════════════════════════════════════════════════════════════════
 
-cd /Users/isaiaebongue/insight-mvp && docker compose down && docker compose build --no-cache backend-service rag-service && docker compose up -d && sleep 30 && docker compose ps && curl http://localhost:8006/health
+Si vous voulez tout exécuter d'un coup, copiez cette commande complète:
 
-=================================================================
-📊 COMMANDES UTILES
-=================================================================
+cd /Users/isaiaebongue/insight-mvp && \
+docker compose stop backend-service report-service && \
+echo "🔨 Rebuild backend..." && \
+docker compose build --no-cache backend-service && \
+echo "🔨 Rebuild report..." && \
+docker compose build --no-cache report-service && \
+echo "🔄 Redémarrage..." && \
+docker compose up -d backend-service report-service && \
+echo "⏳ Attente 30s..." && \
+sleep 30 && \
+echo "✅ Backend:" && \
+curl -s http://localhost:8006/health | grep -o '"status":"[^"]*"' && \
+echo "✅ Report:" && \
+curl -s http://localhost:8007/health | grep -o '"status":"[^"]*"' && \
+echo "🎉 Déploiement terminé!"
+
+
+════════════════════════════════════════════════════════════════════════════
+VÉRIFICATION POST-DÉPLOIEMENT
+════════════════════════════════════════════════════════════════════════════
+
+Après le rebuild, vérifiez les services:
 
 # Voir les logs en temps réel
-docker compose logs -f
+docker compose logs -f backend-service report-service
 
-# Voir logs backend uniquement
+# Voir les logs backend seulement
 docker compose logs -f backend-service
 
-# Arrêter l'application
-docker compose down
+# Voir les logs report seulement
+docker compose logs -f report-service
+
+# Vérifier les conteneurs en cours
+docker compose ps
+
+
+════════════════════════════════════════════════════════════════════════════
+TEST DE L'APPLICATION
+════════════════════════════════════════════════════════════════════════════
+
+1. Ouvrir OpenWebUI dans votre navigateur:
+   http://localhost:3000
+
+2. Générer un rapport:
+   - Type: Finance Banque
+   - Analyse: Synthèse Executive
+   - Query: "Analyse du marché bancaire français 2025"
+
+3. Attendre la génération (peut prendre 2-5 minutes)
+
+4. Vérifier le contenu:
+   ✓ Paragraphes narratifs détaillés (60%)
+   ✓ Bullet points pour données (40%)
+   ✓ Citations APA (Auteur, Année)
+   ✓ 40-60 sources croisées
+
+5. Exporter en PDF et vérifier le style:
+   ✓ Titres en NOIR alignés à gauche
+   ✓ Texte en noir sur fond bleu/gris clair
+   ✓ Filigrane AXIAL bien visible (15% opacité)
+   ✓ Footer avec bande bleue: "© AXIAL 2025..."
+   ✓ Numérotation hiérarchique (1., 1.1, 1.1.1)
+   ✓ Sources avec URLs cliquables en bleu
+
+
+════════════════════════════════════════════════════════════════════════════
+EN CAS DE PROBLÈME
+════════════════════════════════════════════════════════════════════════════
+
+# Voir les erreurs backend
+docker compose logs --tail=100 backend-service
+
+# Voir les erreurs report
+docker compose logs --tail=100 report-service
 
 # Redémarrer un service
 docker compose restart backend-service
 
-=================================================================
+# Rebuild complet si problème
+docker compose down
+docker compose up -d
 
+
+════════════════════════════════════════════════════════════════════════════
+MODIFICATIONS APPLIQUÉES (V4.2)
+════════════════════════════════════════════════════════════════════════════
+
+BACKEND SERVICE:
+✓ Max tokens augmentés: sonar 8000, sonar-pro 16000, sonar-reasoning 20000
+✓ Timeout API: 600s (10 minutes)
+✓ Température: 0.2 (plus de créativité)
+✓ Instructions paragraphes: 60% narratif + 40% bullets
+✓ 3 templates métier enrichis avec exemples détaillés
+
+REPORT SERVICE:
+✓ Titres en NOIR (#000000) alignés à gauche
+✓ Sous-titres en NOIR (#000000)
+✓ Texte corps en NOIR (10.5pt)
+✓ Filigrane AXIAL visible (15% opacité)
+✓ Fond bleu/gris clair (#E8EEF7)
+✓ Footer avec bande bleue (#6B8FC1) et texte blanc
+✓ Marges optimisées (2cm top, 1.5cm bottom)
+
+
+════════════════════════════════════════════════════════════════════════════
+DOCUMENTATION
+════════════════════════════════════════════════════════════════════════════
+
+- Style PDF: README_STYLE_TEMPLATE.md
+- Citations APA: README_CHARTS_APA.md
+- Configuration: README_MODELES.md
+- Script auto: REBUILD_MAINTENANT.sh
+
+
+════════════════════════════════════════════════════════════════════════════
+RÉSULTAT ATTENDU
+════════════════════════════════════════════════════════════════════════════
+
+Le PDF généré sera VISUELLEMENT IDENTIQUE à vos templates de référence:
+• Titres en noir pur
+• Filigrane AXIAL bien visible
+• Fond coloré élégant
+• Footer professionnel avec bande bleue
+• Contenu riche avec paragraphes narratifs
+• Style épuré et professionnel
+
+
+════════════════════════════════════════════════════════════════════════════

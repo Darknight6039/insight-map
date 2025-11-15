@@ -21,6 +21,12 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY, TA_RIGHT
 from reportlab.lib.utils import ImageReader
 from loguru import logger
 from PIL import Image as PILImage
+import matplotlib
+matplotlib.use('Agg')  # Backend non-interactif pour environnement serveur
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import re
+import ast
 
 
 # Configuration
@@ -101,6 +107,104 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Utility functions for chart generation
+def parse_chart_blocks(content: str) -> List[Dict]:
+    """
+    Parse les blocs ```chart``` dans le contenu markdown
+    Retourne une liste de dictionnaires contenant les données des graphiques
+    """
+    charts = []
+    chart_pattern = r'```chart\n(.*?)\n```'
+    
+    matches = re.findall(chart_pattern, content, re.DOTALL)
+    
+    for idx, match in enumerate(matches):
+        try:
+            chart_data = {}
+            for line in match.strip().split('\n'):
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    if key == 'data':
+                        # Parser le dict Python
+                        chart_data['data'] = ast.literal_eval(value)
+                    else:
+                        chart_data[key] = value
+            
+            chart_data['index'] = idx
+            charts.append(chart_data)
+            logger.info(f"Chart parsed: {chart_data.get('title', 'Untitled')}")
+        except Exception as e:
+            logger.error(f"Error parsing chart block: {e}")
+            continue
+    
+    return charts
+
+def generate_chart_image(chart_data: Dict) -> Optional[BytesIO]:
+    """
+    Génère une image de graphique à partir des données
+    Retourne un BytesIO contenant l'image PNG
+    """
+    try:
+        chart_type = chart_data.get('type', 'bar')
+        title = chart_data.get('title', 'Graphique')
+        data = chart_data.get('data', {})
+        source = chart_data.get('source', '')
+        
+        labels = data.get('labels', [])
+        values = data.get('values', [])
+        
+        if not labels or not values:
+            logger.warning(f"Chart {title} has no data")
+            return None
+        
+        # Créer la figure avec style professionnel
+        plt.figure(figsize=(10, 6))
+        plt.style.use('seaborn-v0_8-darkgrid')
+        
+        if chart_type == 'bar':
+            plt.bar(labels, values, color='#0052A5', alpha=0.8, edgecolor='black')
+            plt.ylabel('Valeurs')
+        elif chart_type == 'line':
+            plt.plot(labels, values, marker='o', color='#0052A5', linewidth=2, markersize=8)
+            plt.ylabel('Valeurs')
+            plt.grid(True, alpha=0.3)
+        elif chart_type == 'pie':
+            colors_pie = plt.cm.Blues(range(50, 250, int(200/len(values))))
+            plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors_pie)
+            plt.axis('equal')
+        
+        plt.title(title, fontsize=14, fontweight='bold', pad=20)
+        plt.xlabel('', fontsize=10)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        
+        # Ajouter la source en bas
+        if source:
+            plt.figtext(0.99, 0.01, f'Source: {source}', ha='right', fontsize=8, style='italic')
+        
+        # Sauvegarder dans BytesIO
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+        img_buffer.seek(0)
+        plt.close()
+        
+        logger.info(f"Chart generated: {title}")
+        return img_buffer
+    except Exception as e:
+        logger.error(f"Error generating chart: {e}")
+        plt.close()  # Fermer la figure en cas d'erreur
+        return None
+
+def remove_chart_blocks(content: str) -> str:
+    """
+    Retire les blocs ```chart``` du contenu markdown
+    """
+    chart_pattern = r'```chart\n.*?\n```'
+    return re.sub(chart_pattern, '', content, flags=re.DOTALL)
+
 # Utility functions for PDF generation
 class ReportFormatter:
     def __init__(self):
@@ -135,14 +239,14 @@ class ReportFormatter:
         self.styles.add(ParagraphStyle(
             name='SectionHeader',
             parent=self.styles['Heading1'],
-            fontSize=14,
+            fontSize=15,  # Légèrement plus grand comme dans le template
             fontName='Helvetica-Bold',
-            spaceBefore=16,
+            spaceBefore=14,
             spaceAfter=8,
-            textColor=colors.HexColor('#0052A5'),
+            textColor=colors.HexColor('#000000'),  # Noir comme dans le template
+            alignment=TA_LEFT,
             leftIndent=0,
-            borderPadding=6,
-            borderColor=colors.HexColor('#0052A5'),
+            borderPadding=0,
             borderWidth=0,
             leading=18
         ))
@@ -150,11 +254,12 @@ class ReportFormatter:
         self.styles.add(ParagraphStyle(
             name='SubsectionHeader',
             parent=self.styles['Heading2'],
-            fontSize=12,
+            fontSize=13,  # Légèrement plus grand comme dans le template
             fontName='Helvetica-Bold',
-            spaceBefore=12,
+            spaceBefore=10,
             spaceAfter=6,
-            textColor=colors.HexColor('#333333'),
+            textColor=colors.HexColor('#000000'),  # Noir comme dans le template
+            alignment=TA_LEFT,
             leftIndent=0,
             leading=16
         ))
@@ -162,25 +267,25 @@ class ReportFormatter:
         self.styles.add(ParagraphStyle(
             name='CustomBodyText',
             parent=self.styles['Normal'],
-            fontSize=10,
+            fontSize=10.5,  # Légèrement plus grand pour meilleure lisibilité
             fontName='Helvetica',
-            spaceAfter=10,
+            spaceAfter=8,
             spaceBefore=2,
             alignment=TA_JUSTIFY,
             leading=14,
-            textColor=colors.HexColor('#333333')
+            textColor=colors.HexColor('#000000')  # Noir pur comme dans le template
         ))
         
         self.styles.add(ParagraphStyle(
             name='BulletPoint',
             parent=self.styles['Normal'],
-            fontSize=10,
+            fontSize=10.5,  # Même taille que le corps de texte
             fontName='Helvetica',
-            spaceAfter=6,
+            spaceAfter=5,
             leftIndent=20,
             bulletIndent=10,
             leading=14,
-            textColor=colors.HexColor('#333333')
+            textColor=colors.HexColor('#000000')  # Noir comme dans le template
         ))
         
         self.styles.add(ParagraphStyle(
@@ -202,6 +307,27 @@ class ReportFormatter:
             textColor=colors.HexColor('#999999'),
             alignment=TA_CENTER
         ))
+        
+        # Styles pour les tableaux (nécessaires pour les rapports longs)
+        self.styles.add(ParagraphStyle(
+            name='TableHeader',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            fontName='Helvetica-Bold',
+            textColor=colors.whitesmoke,
+            alignment=TA_LEFT,
+            leading=12
+        ))
+        
+        self.styles.add(ParagraphStyle(
+            name='TableCell',
+            parent=self.styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica',
+            textColor=colors.HexColor('#333333'),
+            alignment=TA_LEFT,
+            leading=11
+        ))
     
     def _add_watermark(self, canvas_obj, doc):
         """Ajoute un filigrane avec opacité réduite sur chaque page en arrière-plan"""
@@ -217,14 +343,18 @@ class ReportFormatter:
             # Calculer les dimensions pour centrer le filigrane
             page_width, page_height = A4
             
+            # Ajouter fond légèrement teinté (bleu/gris clair) comme dans les templates AXIAL
+            canvas_obj.setFillColor(colors.HexColor('#E8EEF7'))  # Bleu très clair
+            canvas_obj.rect(0, 0, page_width, page_height, fill=1, stroke=0)
+            
             # Charger l'image et la redimensionner
             img = PILImage.open(WATERMARK_PATH)
             img_width, img_height = img.size
             logger.info(f"Watermark image loaded: {img_width}x{img_height}")
             
-            # Filigrane en pleine page (95% pour couvrir toute la page)
-            max_width = page_width * 0.95
-            max_height = page_height * 0.95
+            # Filigrane en pleine page (100% pour couvrir toute la page)
+            max_width = page_width * 1.0
+            max_height = page_height * 1.0
             
             # Calculer le ratio pour conserver les proportions
             width_ratio = max_width / img_width
@@ -238,10 +368,10 @@ class ReportFormatter:
             x = (page_width - new_width) / 2
             y = (page_height - new_height) / 2
             
-            # Dessiner l'image en arrière-plan avec opacité réduite
+            # Dessiner l'image en arrière-plan avec opacité visible comme dans les templates
             # Important: définir l'opacité AVANT de dessiner
-            canvas_obj.setFillAlpha(0.12)  # 12% d'opacité pour couvrir sans gêner la lecture
-            canvas_obj.setStrokeAlpha(0.12)
+            canvas_obj.setFillAlpha(0.15)  # 15% d'opacité comme dans les templates AXIAL
+            canvas_obj.setStrokeAlpha(0.15)
             
             # Dessiner l'image en arrière-plan
             canvas_obj.drawImage(
@@ -260,26 +390,26 @@ class ReportFormatter:
             logger.error(f"❌ Error adding watermark: {e}", exc_info=True)
     
     def _add_header_footer(self, canvas_obj, doc):
-        """Ajoute en-tête et pied de page"""
+        """Ajoute pied de page discret et professionnel"""
         canvas_obj.saveState()
         page_width, page_height = A4
         
-        # Pied de page
-        canvas_obj.setFont('Helvetica', 8)
-        canvas_obj.setFillColor(colors.HexColor('#999999'))
+        # Pied de page style template AXIAL
+        canvas_obj.setFont('Helvetica', 7.5)
+        canvas_obj.setFillColor(colors.HexColor('#FFFFFF'))  # Texte blanc sur fond coloré
         
-        # Date et heure à gauche
-        footer_text = f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
-        canvas_obj.drawString(2*cm, 1.5*cm, footer_text)
+        # Créer un rectangle coloré pour le footer (comme dans le template)
+        canvas_obj.setFillColor(colors.HexColor('#6B8FC1'))  # Bleu moyen pour le fond
+        canvas_obj.rect(0, 0, page_width, 1*cm, fill=1, stroke=0)
         
-        # Numéro de page à droite
+        # Texte du footer en blanc
+        canvas_obj.setFillColor(colors.HexColor('#FFFFFF'))
+        footer_text = f"© AXIAL {datetime.now().year}. Tous droits réservés. www.axial-ia.com"
+        canvas_obj.drawString(2*cm, 0.4*cm, footer_text)
+        
+        # Numéro de page à droite en blanc
         page_num = f"Page {doc.page}"
-        canvas_obj.drawRightString(page_width - 2*cm, 1.5*cm, page_num)
-        
-        # Ligne de séparation en haut
-        canvas_obj.setStrokeColor(colors.HexColor('#0052A5'))
-        canvas_obj.setLineWidth(0.5)
-        canvas_obj.line(2*cm, page_height - 2*cm, page_width - 2*cm, page_height - 2*cm)
+        canvas_obj.drawRightString(page_width - 2*cm, 0.4*cm, page_num)
         
         canvas_obj.restoreState()
     
@@ -296,8 +426,8 @@ class ReportFormatter:
             pagesize=A4, 
             rightMargin=2*cm, 
             leftMargin=2*cm, 
-            topMargin=3*cm, 
-            bottomMargin=2.5*cm
+            topMargin=2*cm,  # Réduit pour plus de contenu (comme dans le template)
+            bottomMargin=1.5*cm  # Réduit pour le footer compact
         )
         
         # Build the document
@@ -308,20 +438,15 @@ class ReportFormatter:
         # ═══════════════════════════════════════════════════════════════
         story.append(Spacer(1, 3*cm))
         
-        # Barre de titre avec fond bleu (simulée avec un tableau)
-        title_data = [[Paragraph(title, self.styles['CustomTitle'])]]
-        title_table = Table(title_data, colWidths=[doc.width])
-        title_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0052A5')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('PADDING', (0, 0), (-1, -1), 15),
-            ('TOPPADDING', (0, 0), (-1, -1), 20),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-        ]))
-        story.append(title_table)
-        story.append(Spacer(1, 1.5*cm))
+        # Titre principal - Style épuré sans bloc bleu
+        # CORRECTION: Nettoyer les emojis et limiter à 150 caractères
+        import re
+        # Supprimer tous les emojis et caractères non-latin
+        clean_title = re.sub(r'[^\x00-\x7F\u00C0-\u00FF]+', '', title)
+        # Limiter la longueur
+        clean_title = clean_title[:150] + "..." if len(clean_title) > 150 else clean_title
+        story.append(Paragraph(clean_title, self.styles['CustomTitle']))
+        story.append(Spacer(1, 1*cm))
         
         # Type d'analyse (si fourni)
         if analysis_type:
@@ -356,30 +481,69 @@ class ReportFormatter:
         story.append(PageBreak())
         
         # ═══════════════════════════════════════════════════════════════
-        # CONTENU PRINCIPAL
+        # CONTENU PRINCIPAL (avec citations APA et graphiques)
         # ═══════════════════════════════════════════════════════════════
-        sources_from_content = self._add_content_sections(story, content)
+        # Extraire et générer les graphiques
+        logger.info("Parsing chart blocks...")
+        charts = parse_chart_blocks(content)
+        chart_images = {}
+        for chart_data in charts:
+            chart_img = generate_chart_image(chart_data)
+            if chart_img:
+                chart_images[chart_data['index']] = chart_img
+        logger.info(f"Generated {len(chart_images)} charts")
+        
+        # Retirer les blocs chart du contenu
+        content_without_charts = remove_chart_blocks(content)
+        
+        # Extraire le mapping des citations pour conversion APA
+        citations_map = self._extract_apa_citations_map(content_without_charts)
+        logger.info(f"Extracted {len(citations_map)} APA citations for conversion")
+        
+        sources_from_content = self._add_content_sections(story, content_without_charts, citations_map, chart_images)
         
         # Extraire les sources du contenu si elles n'ont pas été fournies
         if not sources or len(sources) == 0:
             sources = self._extract_sources_from_content(content)
         
         # ═══════════════════════════════════════════════════════════════
-        # SECTION SOURCES (si disponibles)
+        # SECTION SOURCES (si disponibles) - Format Bibliographie Professionnelle
         # ═══════════════════════════════════════════════════════════════
         if sources and len(sources) > 0:
             story.append(PageBreak())
-            story.append(Paragraph("Sources et Références", self.styles['SectionHeader']))
-            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("Références Bibliographiques", self.styles['SectionHeader']))
+            story.append(Spacer(1, 0.5*cm))
             
-            # Ajouter les sources en format APA
+            # Ajouter les sources en format APA propre avec liens hypertextes
             for i, source in enumerate(sources, 1):
-                # Nettoyer la source des markdown
-                cleaned_source = self._clean_markdown(source)
-                # Format APA avec numéro
-                source_text = f"[{i}] {cleaned_source}"
+                # Gérer différents formats de sources (chaîne ou dictionnaire)
+                import re
+                if isinstance(source, dict):
+                    # Format dictionnaire (ex: {'text': '...', 'url': '...'})
+                    source_text_raw = source.get('text', str(source))
+                else:
+                    # Format chaîne
+                    source_text_raw = source
+                
+                # Nettoyer la source des markdown et emojis
+                cleaned_source = self._clean_markdown(source_text_raw)
+                # Enlever les emojis résiduels
+                cleaned_source = re.sub(r'[^\x00-\x7F\u00C0-\u00FF\u2013\u2014]+', '', cleaned_source).strip()
+                
+                # Extraire l'URL pour créer un lien hypertexte
+                url = self._extract_source_url(cleaned_source)
+                
+                if url:
+                    # Séparer le texte de l'URL
+                    text_without_url = cleaned_source.replace(url, '').strip()
+                    # Créer lien hypertexte cliquable en bleu
+                    source_text = f'{text_without_url} <a href="{url}" color="blue"><u>{url}</u></a>'
+                else:
+                    # Pas d'URL trouvée, format standard
+                    source_text = f"{cleaned_source}"
+                
                 story.append(Paragraph(source_text, self.styles['Citation']))
-                story.append(Spacer(1, 6))
+                story.append(Spacer(1, 8))
         
         # ═══════════════════════════════════════════════════════════════
         # MÉTADONNÉES (si disponibles)
@@ -403,8 +567,68 @@ class ReportFormatter:
         buffer.close()
         return pdf
     
-    def _clean_markdown(self, text):
-        """Nettoie le texte des symboles markdown pour un rendu PDF propre"""
+    def _extract_apa_citations_map(self, content):
+        """Extrait les sources et crée un mapping [1] → (Auteur, année) pour citations APA"""
+        import re
+        citations_map = {}
+        in_sources = False
+        
+        for line in content.split('\n'):
+            line_stripped = line.strip()
+            
+            # Détecter le début de la section sources
+            if line_stripped.startswith('## 📚') or line_stripped.startswith('## Sources'):
+                in_sources = True
+                continue
+            
+            # Si on est dans la section sources
+            if in_sources and line_stripped.startswith('['):
+                # Format: [1] Auteur/Organisation. (2024). Titre. URL
+                match = re.match(r'\[(\d+)\]\s*([^.]+)\.?\s*\((\d{4})\)', line_stripped)
+                if match:
+                    num = match.group(1)
+                    author = match.group(2).strip()
+                    year = match.group(3)
+                    # Raccourcir le nom si trop long
+                    if len(author) > 30:
+                        author = author[:27] + "..."
+                    citations_map[num] = f"({author}, {year})"
+                else:
+                    # Format alternatif sans année visible
+                    match2 = re.match(r'\[(\d+)\]\s*([^.]+)', line_stripped)
+                    if match2:
+                        num = match2.group(1)
+                        author = match2.group(2).strip()
+                        if len(author) > 30:
+                            author = author[:27] + "..."
+                        citations_map[num] = f"({author})"
+            
+            # Si on rencontre une nouvelle section majeure, on sort
+            if in_sources and line_stripped.startswith('## ') and not line_stripped.startswith('## 📚') and not line_stripped.startswith('## Sources'):
+                break
+        
+        return citations_map
+    
+    def _extract_source_url(self, source_text: str) -> Optional[str]:
+        """
+        Extrait l'URL d'une source APA format.
+        Formats supportés:
+        - Auteur. (Année). Titre. Type. https://example.com
+        - Auteur. (Année). Titre. http://example.com
+        """
+        import re
+        # Regex pour extraire URL (http:// ou https://)
+        url_pattern = r'(https?://[^\s]+)'
+        match = re.search(url_pattern, source_text)
+        if match:
+            url = match.group(1)
+            # Nettoyer l'URL des caractères de ponctuation finaux
+            url = url.rstrip('.,;:')
+            return url
+        return None
+    
+    def _clean_markdown(self, text, citations_map=None):
+        """Nettoie le texte des symboles markdown et convertit citations en format APA"""
         import re
         
         # Retirer les ** pour le gras (on utilise les balises HTML à la place)
@@ -416,8 +640,22 @@ class ReportFormatter:
         # Retirer les `` pour le code inline
         text = re.sub(r'`(.+?)`', r'<font name="Courier">\1</font>', text)
         
-        # Conserver les citations [1], [2], etc. en gras
-        text = re.sub(r'\[(\d+)\]', r'<b>[\1]</b>', text)
+        # Convertir citations [1], [2], [3] en format APA (Auteur, année)
+        if citations_map:
+            def replace_citation(match):
+                num = match.group(1)
+                if num in citations_map:
+                    return f'<font size="9" color="#666666">{citations_map[num]}</font>'
+                return match.group(0)
+            
+            # Remplacer les citations simples [1]
+            text = re.sub(r'\[(\d+)\]', replace_citation, text)
+            
+            # Remplacer les citations multiples [1][2][3]
+            # Déjà géré par le pattern ci-dessus qui les traite individuellement
+        else:
+            # Fallback : conserver les citations [1], [2], etc. en format réduit
+            text = re.sub(r'\[(\d+)\]', r'<sup><font size="8">[\1]</font></sup>', text)
         
         return text
     
@@ -430,22 +668,33 @@ class ReportFormatter:
         for line in content.split('\n'):
             line_stripped = line.strip()
             
-            # Détecter le début de la section sources
-            if line_stripped.startswith('## 📚') or line_stripped.startswith('## Sources'):
+            # Détecter le début de la section sources (formats variés)
+            if (line_stripped.startswith('## 📚') or 
+                line_stripped.startswith('## Sources') or
+                line_stripped.startswith('## Références') or
+                'bibliographie' in line_stripped.lower() or
+                'sources' in line_stripped.lower() and line_stripped.startswith('##')):
                 in_sources = True
+                logger.info(f"Found sources section: {line_stripped}")
                 continue
             
             # Si on est dans la section sources et qu'on trouve une citation
-            if in_sources and line_stripped.startswith('['):
-                # Extraire le format [N] Auteur. (Année). Titre. URL
-                match = re.match(r'\[(\d+)\]\s*(.+)', line_stripped)
-                if match:
-                    sources.append(match.group(2).strip())
+            if in_sources and line_stripped:
+                # Format [N] Auteur. (Année). Titre. URL
+                if line_stripped.startswith('['):
+                    match = re.match(r'\[(\d+)\]\s*(.+)', line_stripped)
+                    if match:
+                        sources.append(match.group(2).strip())
+                # Format sans [N] - juste la source
+                elif not line_stripped.startswith('#'):
+                    sources.append(line_stripped)
             
             # Si on rencontre une nouvelle section majeure, on sort des sources
-            if in_sources and line_stripped.startswith('## ') and not line_stripped.startswith('## 📚') and not line_stripped.startswith('## Sources'):
+            if in_sources and line_stripped.startswith('## ') and not any(x in line_stripped.lower() for x in ['sources', 'référence', 'bibliographie', '📚']):
+                logger.info(f"Exiting sources section at: {line_stripped}, found {len(sources)} sources")
                 break
         
+        logger.info(f"Total sources extracted: {len(sources)}")
         return sources
     
     def _is_table_row(self, line):
@@ -453,7 +702,7 @@ class ReportFormatter:
         line = line.strip()
         return line.startswith('|') and line.endswith('|') and line.count('|') >= 2
     
-    def _parse_table(self, lines, start_idx):
+    def _parse_table(self, lines, start_idx, citations_map=None):
         """Parse un tableau markdown et retourne l'objet Table et l'index suivant"""
         table_lines = []
         i = start_idx
@@ -475,53 +724,84 @@ class ReportFormatter:
             
             # Extraire les cellules
             cells = [cell.strip() for cell in line.split('|')[1:-1]]
-            # Nettoyer le markdown dans les cellules
-            cells = [self._clean_markdown(cell) for cell in cells]
-            table_data.append(cells)
+            # Nettoyer le markdown dans les cellules (avec citations APA)
+            cells = [self._clean_markdown(cell, citations_map) for cell in cells]
+            
+            # CORRECTION: Convertir chaque cellule en Paragraph pour permettre le word wrapping
+            # Limiter drastiquement la longueur des cellules pour éviter les erreurs ReportLab
+            paragraph_cells = []
+            for cell in cells:
+                # Limiter à 200 caractères par cellule max (pour éviter débordement page)
+                if len(cell) > 200:
+                    cell = cell[:197] + "..."
+                
+                # Utiliser Paragraph pour le wrapping automatique
+                if idx == 0:  # En-tête
+                    p = Paragraph(cell, self.styles['TableHeader'])
+                else:  # Corps
+                    p = Paragraph(cell, self.styles['TableCell'])
+                paragraph_cells.append(p)
+            
+            table_data.append(paragraph_cells)
         
         if len(table_data) < 2:
             return None, start_idx
         
-        # Créer le tableau avec style professionnel
-        table = Table(table_data)
-        table_style = TableStyle([
-            # En-tête (première ligne)
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0052A5')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            
-            # Lignes du corps
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            
-            # Bordures
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0052A5')),
-            
-            # Padding
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            
-            # Alternance de couleur pour les lignes
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
-        ])
-        table.setStyle(table_style)
+        # PROTECTION: Si trop de lignes, limiter à 20 max pour éviter débordement
+        if len(table_data) > 21:  # 1 header + 20 lignes max
+            logger.warning(f"Table too large ({len(table_data)} rows), truncating to 20 rows")
+            table_data = [table_data[0]] + table_data[1:21]
         
-        return table, i
+        # Créer le tableau avec style professionnel
+        # CORRECTION: Ne pas spécifier colWidths, laisser ReportLab les calculer
+        try:
+            table = Table(table_data)
+            table_style = TableStyle([
+                # En-tête (première ligne)
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0052A5')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # TOP au lieu de MIDDLE pour mieux gérer les longues cellules
+                
+                # Lignes du corps
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                
+                # Bordures
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#0052A5')),
+                
+                # Padding
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                
+                # Alternance de couleur pour les lignes
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ])
+            table.setStyle(table_style)
+            
+            return table, i
+        except Exception as e:
+            # Si le tableau est trop complexe, retourner None pour le skipper
+            logger.warning(f"Failed to create table, will render as text: {str(e)[:100]}")
+            return None, start_idx
     
-    def _add_content_sections(self, story, content):
-        """Parse content and add structured sections with better markdown support"""
+    def _add_content_sections(self, story, content, citations_map=None, chart_images=None):
+        """Parse content and add structured sections with better markdown support + APA citations + charts"""
+        if chart_images is None:
+            chart_images = {}
+        
         lines = content.split('\n')
         current_section = []
         in_sources = False
         sources_found = []
+        chart_counter = 0  # Pour insérer les graphiques au bon endroit
         i = 0
         
         while i < len(lines):
@@ -547,12 +827,12 @@ class ReportFormatter:
             if self._is_table_row(line_stripped) and not in_sources:
                 # Ajouter le contenu en cours
                 if current_section:
-                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 # Parser et ajouter le tableau
-                table, next_idx = self._parse_table(lines, i)
+                table, next_idx = self._parse_table(lines, i, citations_map)
                 if table:
                     story.append(Spacer(1, 0.3*cm))
                     story.append(table)
@@ -562,50 +842,85 @@ class ReportFormatter:
                 
             if not line_stripped:
                 if current_section:
-                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 story.append(Spacer(1, 8))
                 i += 1
                 continue
             
-            # Check for section headers (## Header)
-            if line_stripped.startswith('##') and not in_sources:
+            # Check for headers (ordre important: ### avant ## avant #)
+            # Check for subsection headers (###)
+            if line_stripped.startswith('###') and not in_sources:
+                if current_section:
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
+                    story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
+                    current_section = []
+                
+                header_text = line_stripped.lstrip('#').strip()
+                # Enlever les emojis des titres
+                header_text = header_text.replace('📚', '').replace('ℹ️', '').strip()
+                # Log pour vérifier préservation numérotation sous-sections
+                logger.debug(f"Processing subsection (###): {header_text}")
+                story.append(Spacer(1, 0.3*cm))
+                story.append(Paragraph(header_text, self.styles['SubsectionHeader']))
+                story.append(Spacer(1, 0.1*cm))
+                
+            # Check for section headers (##)
+            elif line_stripped.startswith('##') and not in_sources:
                 # Add previous section content
                 if current_section:
-                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 # Add new section header
                 header_text = line_stripped.lstrip('#').strip()
-                # Enlever les emojis des titres s'ils sont encore là
+                # Enlever les emojis des titres
                 header_text = header_text.replace('📚', '').replace('ℹ️', '').strip()
+                # Log pour vérifier préservation numérotation (ex: "1. Titre", "1.1 Sous-titre")
+                logger.debug(f"Processing header (##): {header_text}")
                 story.append(Spacer(1, 0.4*cm))
                 story.append(Paragraph(header_text, self.styles['SectionHeader']))
                 story.append(Spacer(1, 0.2*cm))
                 
-            # Check for subsection headers (### or **)
-            elif line_stripped.startswith('###') or (line_stripped.startswith('**') and line_stripped.endswith('**') and ':' in line_stripped):
+                # Insérer un graphique si disponible
+                if chart_counter in chart_images:
+                    try:
+                        img = Image(chart_images[chart_counter], width=15*cm, height=9*cm)
+                        story.append(Spacer(1, 0.3*cm))
+                        story.append(img)
+                        story.append(Spacer(1, 0.3*cm))
+                        chart_counter += 1
+                        logger.info(f"Inserted chart {chart_counter} after section: {header_text}")
+                    except Exception as e:
+                        logger.error(f"Error inserting chart: {e}")
+                
+            # Check for main title (#)
+            elif line_stripped.startswith('#') and not line_stripped.startswith('##') and not in_sources:
                 if current_section:
-                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
-                header_text = line_stripped.lstrip('#').strip('*').strip()
+                header_text = line_stripped.lstrip('#').strip()
+                # Enlever les emojis des titres
+                header_text = header_text.replace('📚', '').replace('ℹ️', '').strip()
+                # Log pour vérifier préservation numérotation
+                logger.debug(f"Processing main title (#): {header_text}")
+                story.append(Spacer(1, 0.5*cm))
+                story.append(Paragraph(header_text, self.styles['CustomTitle']))
                 story.append(Spacer(1, 0.3*cm))
-                story.append(Paragraph(header_text, self.styles['SubsectionHeader']))
-                story.append(Spacer(1, 0.1*cm))
                 
             # Check for bullet points
             elif line_stripped.startswith(('- ', '• ', '* ')) and not line_stripped.startswith('**'):
                 if current_section:
-                    cleaned_text = self._clean_markdown(' '.join(current_section))
+                    cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
                     story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
                     current_section = []
                 
                 bullet_text = line_stripped.lstrip('-•*').strip()
-                cleaned_bullet = self._clean_markdown(bullet_text)
+                cleaned_bullet = self._clean_markdown(bullet_text, citations_map)
                 story.append(Paragraph(f"• {cleaned_bullet}", self.styles['BulletPoint']))
                 
             # Regular text
@@ -617,7 +932,7 @@ class ReportFormatter:
         
         # Add remaining content
         if current_section:
-            cleaned_text = self._clean_markdown(' '.join(current_section))
+            cleaned_text = self._clean_markdown(' '.join(current_section), citations_map)
             story.append(Paragraph(cleaned_text, self.styles['CustomBodyText']))
         
         return sources_found
@@ -698,9 +1013,17 @@ def health():
 def generate_report(payload: GenerateReportPayload, db: Session = Depends(get_db)):
     """Generate and store a new report"""
     try:
+        # CORRECTION: Nettoyer les emojis et limiter le titre à 200 caractères max
+        import re
+        clean_title = payload.title if payload.title else "Rapport sans titre"
+        # Supprimer les emojis
+        clean_title = re.sub(r'[^\x00-\x7F\u00C0-\u00FF]+', '', clean_title)
+        # Limiter la longueur
+        clean_title = clean_title[:200] if len(clean_title) > 200 else clean_title
+        
         # Create new report
         report = Report(
-            title=payload.title,
+            title=clean_title,
             content=payload.content,
             analysis_type=payload.analysis_type,
             metadata_json=json.dumps(payload.metadata) if payload.metadata else None

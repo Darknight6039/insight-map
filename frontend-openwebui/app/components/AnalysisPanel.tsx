@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Brain, TrendingUp, Sparkles, Shield, FileText, Download, Play, Clock } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import ReactMarkdown from 'react-markdown'
+import ProgressBar from './ProgressBar'
 
 interface AnalysisType {
   id: string
@@ -35,6 +36,10 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null)
+  
+  // États pour barre de progression
+  const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
 
   const filteredAnalyses = analysisTypes.filter(analysis => 
     analysis.business.includes(selectedBusiness)
@@ -48,6 +53,12 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
 
     setIsLoading(true)
     setActiveAnalysis(analysisId)
+    setProgress(0)
+
+    // Étape 1 : Initialisation (10%)
+    setProgress(10)
+    setProgressMessage('🔍 Recherche documents RAG...')
+    await new Promise(resolve => setTimeout(resolve, 500))
 
     // Créer un résultat placeholder pour le streaming
     const resultId = Date.now().toString()
@@ -63,7 +74,20 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
     setResults(prev => [placeholderResult, ...prev])
     setSelectedResult(placeholderResult)
 
+    // Étape 2 : Préparation (25%)
+    setProgress(25)
+    setProgressMessage('📝 Préparation de la requête...')
+
     try {
+      // Étape 3 : Génération (30%)
+      setProgress(30)
+      const isDeepAnalysis = analysisId.includes('approfondi')
+      setProgressMessage(
+        isDeepAnalysis 
+          ? '🌐 Génération rapport avec 60 sources (1-2 min)...'
+          : '🌐 Génération rapport (30-60s)...'
+      )
+
       // Utiliser l'endpoint backend /extended-analysis pour le streaming
       const response = await fetch('http://localhost:8006/extended-analysis', {
         method: 'POST',
@@ -78,12 +102,27 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
         })
       })
 
+      // Simuler progression pendant attente backend
+      // (le backend prend 45-120s selon type, on simule progression)
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return 90 // Cap à 90% jusqu'à réponse
+          return prev + 5
+        })
+      }, 3000) // +5% toutes les 3s
+
+      const data = await response.json()
+      clearInterval(progressInterval)
+
       if (!response.ok) {
         throw new Error('Erreur lors de l\'analyse')
       }
 
-      const data = await response.json()
-      
+      // Étape 4 : Finalisation (95%)
+      setProgress(95)
+      setProgressMessage('✅ Formatage du rapport...')
+      await new Promise(resolve => setTimeout(resolve, 500))
+
       // Mettre à jour le résultat avec les données complètes
       const finalResult: AnalysisResult = {
         id: resultId,
@@ -96,6 +135,12 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
 
       setResults(prev => prev.map(r => r.id === resultId ? finalResult : r))
       setSelectedResult(finalResult)
+
+      // Étape 5 : Terminé (100%)
+      setProgress(100)
+      setProgressMessage('✅ Rapport généré avec succès!')
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
       toast.success('✅ Analyse terminée avec succès !')
 
     } catch (error) {
@@ -108,6 +153,8 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
     } finally {
       setIsLoading(false)
       setActiveAnalysis(null)
+      setProgress(0)
+      setProgressMessage('')
     }
   }
 
@@ -162,6 +209,12 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
 
   return (
     <div className="space-y-6">
+      {/* Barre de progression */}
+      <ProgressBar 
+        progress={progress}
+        message={progressMessage}
+        isVisible={isLoading}
+      />
       {/* Query input */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
