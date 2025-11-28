@@ -7,13 +7,15 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncGenerator
 import os
 import requests
+import json
+import asyncio
 from datetime import datetime
 from loguru import logger
 from importlib import metadata
-from app.business_prompts import get_business_prompt, get_available_business_types, get_business_type_display_name
+from app.business_prompts import get_business_prompt, get_available_business_types, get_business_type_display_name, get_trusted_sources, TRUSTED_SOURCES_INSTRUCTION
 
 # Import SDK Perplexity (compatible OpenAI SDK)
 try:
@@ -57,7 +59,7 @@ _document_metadata_cache = {}
 
 # Modèles Pydantic
 class BusinessAnalysisRequest(BaseModel):
-    business_type: str
+    business_type: Optional[str] = "general"  # Optional, defaults to generic
     analysis_type: str
     query: str
     title: Optional[str] = None
@@ -745,84 +747,42 @@ def call_perplexity_safe(
         
         logger.info(f"Using model: {selected_model} for task: {task_type} (max_tokens: {max_tokens})")
         
-        # System prompts avec instructions de citation APA + URLs (style Perplexity)
-        system_prompts = {
-            "finance_banque": """Tu es un consultant senior McKinsey spécialisé en stratégie bancaire utilisant Perplexity AI. 
-                              Génère des rapports structurés avec analyses quantifiées et recommandations actionnables.
-                              
-                              RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
-                              - Recherche web Perplexity extensive pour données actuelles et vérifiées
-                              - MINIMUM 40-60 sources variées et approfondies, réparties comme suit :
-                                * 24-36 sources institutionnelles (INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA)
-                                * 8-12 sources académiques ou études sectorielles (McKinsey, BCG, Bain, think tanks)
-                                * 6-9 sources média spécialisé (Les Échos, Financial Times, Bloomberg, Reuters)
-                                * 2-3 sources réglementaires et complémentaires
-                              - Cite TOUTES les sources en format APA directement dans le texte: (Auteur, Année) ou (Organisation, Année)
-                              - CROISE systématiquement les sources : compare les chiffres de 2-3 sources différentes
-                              - Exemple: "Le marché croît de 15% selon l'INSEE (INSEE, 2024), confirmé par la Banque de France à 14,8% (Banque de France, 2024)"
-                              - En fin de réponse, section "## 📚 Références Bibliographiques" avec bibliographie APA complète organisée par type
-                              - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
-                              - Sources datant de moins de 18 mois prioritaires (sauf références historiques)
-                              - Privilégier sources françaises pour contexte national, sources internationales pour comparaisons
-                              
-                              HIÉRARCHIE SOURCES OBLIGATOIRE :
-                              - 60% institutionnelles : insee.fr, banque-france.fr, acpr.banque-france.fr, amf-france.org, ministères
-                              - 20% académiques : mckinsey.com, bcg.com, bain.com, ofce.sciences-po.fr, think tanks
-                              - 15% média réputé : lesechos.fr, ft.com, bloomberg.com, reuters.com, latribune.fr
-                              - 5% autres vérifiées et pertinentes
-                              
-                              DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés, sources douteuses""",
-                              
-            "tech_digital": """Tu es un consultant BCG expert en transformation digitale utilisant Perplexity AI. 
-                             Génère des analyses techniques détaillées avec business case et ROI.
-                             
-                             RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
-                             - Recherche web Perplexity extensive pour données actuelles et vérifiées
-                             - MINIMUM 40-60 sources variées et approfondies :
-                               * 24-36 sources tech institutionnelles (Gartner, IDC, Forrester, organismes officiels)
-                               * 8-12 études sectorielles et rapports cabinets (McKinsey Digital, BCG, whitepapers)
-                               * 6-9 sources média tech spécialisé (TechCrunch, Wired, MIT Tech Review, ZDNet)
-                               * 2-3 sources académiques et complémentaires
-                             - Citations en format APA directement dans le texte: (Auteur, Année) ou (Organisation, Année)
-                             - CROISE les sources : compare chiffres de 2-3 sources avec citations
-                             - Section finale "## 📚 Références Bibliographiques" au format APA organisée par type
-                             - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
-                             - Sources <18 mois prioritaires
-                             
-                             HIÉRARCHIE SOURCES OBLIGATOIRE :
-                             - 60% institutionnelles : gartner.com, idc.com, forrester.com, organismes tech officiels
-                             - 20% académiques : mckinsey.com, bcg.com, bain.com, whitepapers recherche
-                             - 15% média tech réputé : techcrunch.com, wired.com, technologyreview.com, zdnet.com
-                             - 5% autres vérifiées
-                             
-                             DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés""",
-                             
-            "retail_commerce": """Tu es un consultant Bain expert en retail et commerce utilisant Perplexity AI. 
-                                Génère des analyses avec insights consommateurs et recommandations opérationnelles.
-                                
-                                RÈGLES DE CITATION OBLIGATOIRES (recherche web Perplexity):
-                                - Recherche web Perplexity extensive pour données actuelles et vérifiées
-                                - MINIMUM 40-60 sources variées et approfondies :
-                                  * 24-36 sources retail institutionnelles (FEVAD, FCD, Nielsen, Kantar, INSEE, observatoires)
-                                  * 8-12 études e-commerce et comportements consommateurs (cabinets, think tanks)
-                                  * 6-9 sources média retail spécialisé (LSA, e-marketing.fr, Retail Detail)
-                                  * 2-3 sources tendances, innovation et complémentaires
-                                - Cite systématiquement en format APA: (Auteur, Année) ou (Organisation, Année) après chaque donnée
-                                - CROISE les sources pour valider les tendances avec citations APA
-                                - Bibliographie finale "## 📚 Références Bibliographiques" format APA complet + URLs organisée par type
-                                - Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
-                                - Sources <18 mois prioritaires pour tendances actuelles
-                                
-                                HIÉRARCHIE SOURCES OBLIGATOIRE :
-                                - 60% institutionnelles : insee.fr, fevad.com, lsa-conso.fr, credoc.fr, observatoires secteur
-                                - 20% académiques : mckinsey.com, bcg.com, bain.com, études retail spécialisées
-                                - 15% média commerce réputé : lsa-conso.fr, ecommercemag.fr, retaildive.com
-                                - 5% autres vérifiées
-                                
-                                DOMAINES À ÉVITER : blogs personnels, forums, sites non vérifiés"""
-        }
-        
-        system_prompt = system_prompts.get(business_type, system_prompts["finance_banque"])
+        # System prompt générique avec sources fiables et citations APA strictes
+        system_prompt = f"""Tu es un consultant senior spécialisé en stratégie d'entreprise.
+
+{TRUSTED_SOURCES_INSTRUCTION}
+
+RÈGLES OBLIGATOIRES:
+
+1. TITRE PROFESSIONNEL:
+   - Commence TOUJOURS par un titre professionnel de 5-10 mots sur la PREMIÈRE LIGNE
+   - Format: # Titre du Rapport
+   - Le titre doit résumer le sujet analysé (pas la question posée)
+
+2. CITATIONS APA STRICTES:
+   - CHAQUE fait/chiffre DOIT être suivi d'une citation: (Auteur, Année)
+   - Exemple: "Le marché croît de 15% (INSEE, 2024)"
+   - Pour données importantes: citer 2-3 sources: (INSEE, 2024; Banque de France, 2024)
+   - JAMAIS de chiffre sans source
+
+3. SECTION SOURCES OBLIGATOIRE EN FIN DE RAPPORT:
+   TERMINE TOUJOURS par cette section exacte:
+
+   ## 📚 Sources
+   
+   1. INSEE. (2024). Titre du rapport. Rapport officiel. https://insee.fr/...
+   2. Banque de France. (2024). Titre. Publication. https://banque-france.fr/...
+   3. McKinsey. (2024). Titre étude. Rapport. https://mckinsey.com/...
+   [Continue avec TOUTES les sources utilisées - minimum 20 sources]
+
+4. QUALITÉ DES SOURCES:
+   - 60% institutionnelles (INSEE, ministères, autorités)
+   - 20% académiques (McKinsey, BCG, think tanks)
+   - 15% média réputé (Les Échos, Bloomberg, FT)
+   - 5% autres vérifiées
+   - ÉVITER: blogs, forums, sites non professionnels
+
+5. STYLE: Professionnel, générique, sans mention de secteur spécifique."""
         
         # Prompt enrichi avec instructions explicites de citation web
         enhanced_prompt = f"""{prompt}
@@ -1057,46 +1017,22 @@ async def generate_chat_response_safe(message: str, business_type: str = None, h
     """Chat avec Perplexity uniquement (pas de RAG interne)"""
     try:
         # 1. Pas de recherche documents - Perplexity uniquement
-        business_context = get_business_type_display_name(business_type) if business_type else "Généraliste"
+        business_context = "Expert IA"  # Toujours générique
         
-        # 2. Construction prompt pour Perplexity avec citations APA enrichies
-        chat_prompt = f"""Tu es un assistant expert spécialisé {business_context} utilisant Perplexity AI.
-
-HISTORIQUE CONVERSATION:
-{history[-3:] if history else "Nouvelle conversation"}
+        # 2. Prompt chat COURT et CONCIS
+        chat_prompt = f"""Tu es un assistant expert en intelligence stratégique.
 
 QUESTION: {message}
 
-INSTRUCTIONS DE RÉPONSE ENRICHIE (MULTI-SOURCES):
-✓ Réponds de manière concise mais sourcée (2-4 paragraphes)
-✓ Utilise recherche web Perplexity extensive pour informations actuelles
-✓ MINIMUM 5-8 sources variées pour réponse complète
-✓ CROISE les sources : compare et valide chaque information importante
-✓ CITE SYSTÉMATIQUEMENT en format APA: (Auteur, Année) ou (Organisation, Année) après chaque fait
-✓ Pour données chiffrées : citer 2 sources si possible (Source1, 2024; Source2, 2024)
-✓ Exemple: "Le secteur croît de 12% selon l'INSEE (INSEE, 2024) et 11,5% selon la Banque de France (Banque de France, 2024), avec 500 entreprises actives (FBF, 2024)"
-✓ En fin : "## 📚 Références Bibliographiques" avec format APA complet + URLs cliquables organisé par type
-✓ Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
+RÈGLES DE RÉPONSE COURTE:
+- Réponds en 2-4 paragraphes MAXIMUM
+- Sois DIRECT et CONCIS
+- Cite 1-2 sources pour les faits importants: (Source, Année)
+- PAS de sections, PAS de listes à puces longues
+- Style conversationnel et professionnel
+- Va droit au but
 
-CATÉGORIES DE SOURCES :
-- 2-3 sources institutionnelles/officielles
-- 2-3 sources études/rapports
-- 1-2 sources presse spécialisée
-
-EXIGENCE QUALITÉ :
-- Privilégier sources françaises officielles (INSEE, ministères, autorités)
-- Vérifier cohérence entre sources avant d'affirmer
-- Mentionner si sources divergent légèrement
-
-STRUCTURE ET STYLE :
-- Si réponse longue avec plusieurs sections : numéroter les titres (## 1., ## 2., ### 2.1, etc.)
-- Style naturel et professionnel, phrases claires et bien structurées
-- Détailler autant que nécessaire pour être complet et précis
-- Transitions naturelles, style fluide et agréable à lire
-- Vocabulaire accessible, éviter jargon excessif
-
-Réponds maintenant avec recherche approfondie et croisement des sources.
-"""
+Réponds maintenant de façon concise:"""
 
         # 3. Appel Perplexity direct (pas de RAG interne)
         response_content = call_perplexity_safe(
@@ -1186,9 +1122,130 @@ async def business_analysis(request: BusinessAnalysisRequest):
         request.title
     )
 
+@app.post("/extended-analysis/stream")
+async def extended_analysis_stream(request: BusinessAnalysisRequest):
+    """Génère rapports avec streaming SSE et barre de progression en temps réel"""
+    
+    async def generate_sse() -> AsyncGenerator[str, None]:
+        try:
+            is_deep_analysis = "approfondi" in (request.analysis_type or "").lower()
+            
+            # Fonction helper pour créer les messages SSE
+            def sse_msg(progress: int, step: str, message: str, **kwargs) -> str:
+                data = {'progress': progress, 'step': step, 'message': message, **kwargs}
+                return f"data: {json.dumps(data)}\n\n"
+            
+            # Étape 1: Démarrage (5%)
+            yield sse_msg(5, 'start', 'Demarrage de analyse...')
+            await asyncio.sleep(0.5)
+            
+            # Étape 2: Recherche documents (15%)
+            yield sse_msg(15, 'search', 'Recherche de sources fiables...')
+            documents = search_documents_safe(request.query, top_k=12)
+            await asyncio.sleep(0.3)
+            
+            # Étape 3: Formatage contexte (25%)
+            yield sse_msg(25, 'context', 'Preparation du contexte...')
+            context = format_context_safe(documents)
+            await asyncio.sleep(0.3)
+            
+            # Étape 4: Création prompt (30%)
+            yield sse_msg(30, 'prompt', 'Construction de la requete...')
+            prompt = create_optimized_prompt(
+                request.business_type or "general",
+                request.analysis_type,
+                request.query,
+                context
+            )
+            await asyncio.sleep(0.3)
+            
+            # Étape 5: Appel Perplexity (35-85%)
+            estimated_time = "90-120s" if is_deep_analysis else "45-60s"
+            gen_msg = f"Generation du rapport ({estimated_time})..."
+            yield sse_msg(35, 'generate', gen_msg)
+            
+            # Simuler progression pendant génération
+            progress_task = asyncio.create_task(simulate_progress_updates())
+            
+            # Appel réel à Perplexity
+            content = call_perplexity_safe(
+                prompt,
+                request.business_type or "general",
+                rag_context=context,
+                task_type="analysis"
+            )
+            
+            progress_task.cancel()
+            
+            # Étape 6: Extraction du titre (90%)
+            yield sse_msg(90, 'title', 'Extraction du titre...')
+            
+            # Extraire le titre de la première ligne
+            lines = content.strip().split('\n')
+            analysis_type_title = request.analysis_type.replace('_', ' ').title() if request.analysis_type else "Analyse"
+            generated_title = request.title or analysis_type_title
+            for line in lines[:5]:
+                if line.startswith('# '):
+                    generated_title = line.replace('# ', '').strip()
+                    break
+            
+            await asyncio.sleep(0.3)
+            
+            # Étape 7: Finalisation (95%)
+            yield sse_msg(95, 'finalize', 'Finalisation du rapport...')
+            
+            # Enrichir les sources
+            enriched_sources = [enrich_source_with_apa(d, i+1) for i, d in enumerate(documents)]
+            
+            # Étape 8: Terminé (100%)
+            result = {
+                'progress': 100,
+                'step': 'done',
+                'message': 'Rapport genere avec succes!',
+                'done': True,
+                'data': {
+                    'analysis_type': request.analysis_type,
+                    'business_type': request.business_type or 'general',
+                    'title': generated_title,
+                    'content': content,
+                    'sources': enriched_sources,
+                    'metadata': {
+                        'query': request.query,
+                        'documents_found': len(documents),
+                        'model': get_model_for_task("analysis"),
+                        'provider': 'Perplexity AI'
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            }
+            yield f"data: {json.dumps(result)}\n\n"
+            
+        except Exception as e:
+            logger.error(f"SSE Analysis error: {e}")
+            err_msg = f"Erreur: {str(e)[:200]}"
+            yield sse_msg(0, 'error', err_msg, error=True)
+    
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+async def simulate_progress_updates():
+    """Simuler des mises à jour de progression pendant la génération"""
+    try:
+        for i in range(40, 85, 5):
+            await asyncio.sleep(3)  # Toutes les 3 secondes
+    except asyncio.CancelledError:
+        pass
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    """Chat intelligent avec contexte métier"""
+    """Chat intelligent - réponses courtes et concises"""
     return await generate_chat_response_safe(
         request.message,
         request.business_type,
@@ -1197,28 +1254,21 @@ async def chat_endpoint(request: ChatRequest):
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
-    """Streaming de la réponse du chat avec Perplexity uniquement (pas de RAG interne)."""
+    """Streaming de la réponse du chat - réponses COURTES et CONCISES."""
     async def token_generator():
         try:
-            # 1) Pas de RAG interne - Perplexity uniquement avec citations
-            business_context = get_business_type_display_name(request.business_type) if request.business_type else "Généraliste"
-            chat_prompt = f"""Tu es un assistant expert spécialisé {business_context} utilisant Perplexity AI.
+            # Prompt pour réponses COURTES (2-4 paragraphes)
+            chat_prompt = f"""QUESTION: {request.message}
 
-HISTORIQUE CONVERSATION:
-{request.conversation_history[-3:] if request.conversation_history else "Nouvelle conversation"}
+RÈGLES:
+- Réponds en 2-4 paragraphes MAXIMUM
+- Sois DIRECT et CONCIS  
+- Style conversationnel
+- Cite 1-2 sources pour faits importants: (Source, Année)
+- PAS de listes à puces longues
+- PAS de sections multiples
 
-QUESTION: {request.message}
-
-INSTRUCTIONS DE RÉPONSE (STYLE PERPLEXITY APP):
-✓ Réponds de manière concise et professionnelle
-✓ Recherche web Perplexity pour informations actuelles
-✓ CITE SYSTÉMATIQUEMENT en format APA: (Auteur, Année) ou (Organisation, Année) après chaque fait
-✓ En fin: "## 📚 Références Bibliographiques" avec format APA complet + URLs cliquables
-✓ Format APA complet: Auteur/Organisation. (Année). Titre complet. Type de document. URL
-✓ Minimum 3 sources vérifiables et récentes
-
-Réponds avec recherche web Perplexity et citations complètes.
-"""
+Réponds maintenant:"""
 
             # 2) Streaming Perplexity
             if not PERPLEXITY_API_KEY or not OPENAI_SDK_AVAILABLE:
@@ -1280,11 +1330,11 @@ async def test_perplexity():
         results = {}
         for task_type, model_name in PERPLEXITY_MODELS.items():
             try:
-        response = client.chat.completions.create(
+                response = client.chat.completions.create(
                     model=model_name,
                     messages=[{"role": "user", "content": "Test"}],
-            max_tokens=10
-        )
+                    max_tokens=10
+                )
                 results[task_type] = {
                     "model": model_name,
                     "status": "✅ OK",

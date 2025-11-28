@@ -2,56 +2,31 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Bot, User, Sparkles, Copy, Download } from 'lucide-react'
+import { Send, Bot, User, Sparkles, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { toast } from 'react-hot-toast'
-import MessageWithCitations from './MessageWithCitations'
-import DocumentModal from './DocumentModal'
-
-interface Source {
-  id: number
-  doc_id: number | string
-  title?: string
-  author?: string
-  year?: number
-  page?: number
-  doc_type?: string
-  text: string
-  score?: number
-  apa_citation?: string
-  document_url?: string
-}
 
 interface Message {
   id: string
   type: 'user' | 'assistant'
   content: string
   timestamp: Date
-  businessContext?: string
-  sources?: Source[]
+  isStreaming?: boolean
 }
 
-interface ChatInterfaceProps {
-  selectedBusiness: string
-}
-
-export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) {
+export default function ChatInterface() {
   const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8006'
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       type: 'assistant',
-      content: '👋 Bonjour ! Je suis votre expert en intelligence stratégique. Comment puis-je vous aider aujourd\'hui ?',
-      timestamp: new Date(),
-      businessContext: 'Généraliste',
-      sources: []
+      content: '👋 Bonjour ! Je suis votre assistant. Comment puis-je vous aider ?',
+      timestamp: new Date()
     }
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -61,29 +36,38 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
     scrollToBottom()
   }, [messages])
 
-  const sendMessage = async () => {
+  const sendMessageWithStreaming = async () => {
     if (!input.trim() || isLoading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
       content: input,
-      timestamp: new Date(),
-      sources: []
+      timestamp: new Date()
     }
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setIsLoading(true)
 
+    // Créer un message assistant vide pour le streaming
+    const assistantId = (Date.now() + 1).toString()
+    const assistantMessage: Message = {
+      id: assistantId,
+      type: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isStreaming: true
+    }
+    setMessages(prev => [...prev, assistantMessage])
+
     try {
-      // Appel synchrone sans streaming
-      const response = await fetch(`${backendBaseUrl}/chat`, {
+      // Utiliser l'endpoint streaming
+      const response = await fetch(`${backendBaseUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage.content,
-          business_type: selectedBusiness,
           conversation_history: messages.slice(-6).map(m => ({ 
             role: m.type === 'user' ? 'user' : 'assistant', 
             content: m.content 
@@ -92,35 +76,74 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Erreur ${response.status}: ${errorText}`)
+        throw new Error(`Erreur ${response.status}`)
       }
 
-      const data = await response.json()
-      
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.response || '❌ Pas de réponse',
-        timestamp: new Date(),
-        businessContext: data.business_context || `Expert ${selectedBusiness.replace('_', ' ')}`,
-        sources: data.sources || []
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let streamedContent = ''
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          
+          // Nettoyer le chunk (enlever [DONE] si présent)
+          const cleanChunk = chunk.replace('[DONE]', '').trim()
+          if (cleanChunk) {
+            streamedContent += cleanChunk
+            
+            // Mettre à jour le message en temps réel
+            setMessages(prev => prev.map(m => 
+              m.id === assistantId 
+                ? { ...m, content: streamedContent }
+                : m
+            ))
+          }
+        }
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      // Marquer le streaming comme terminé
+      setMessages(prev => prev.map(m => 
+        m.id === assistantId 
+          ? { ...m, isStreaming: false }
+          : m
+      ))
 
     } catch (error: any) {
-      console.error('Erreur chat:', error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: '❌ Une erreur s\'est produite. Veuillez réessayer.',
-        timestamp: new Date(),
-        businessContext: 'Système',
-        sources: []
+      console.error('Erreur chat streaming:', error)
+      
+      // Fallback vers l'endpoint non-streaming
+      try {
+        const fallbackResponse = await fetch(`${backendBaseUrl}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userMessage.content,
+            conversation_history: []
+          })
+        })
+
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json()
+          setMessages(prev => prev.map(m => 
+            m.id === assistantId 
+              ? { ...m, content: data.response || '❌ Pas de réponse', isStreaming: false }
+              : m
+          ))
+        } else {
+          throw new Error('Fallback failed')
+        }
+      } catch (fallbackError) {
+        setMessages(prev => prev.map(m => 
+          m.id === assistantId 
+            ? { ...m, content: '❌ Erreur de connexion. Veuillez réessayer.', isStreaming: false }
+            : m
+        ))
+        toast.error('Erreur de communication')
       }
-      setMessages(prev => [...prev, errorMessage])
-      toast.error('Erreur de communication')
     } finally {
       setIsLoading(false)
     }
@@ -129,96 +152,71 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      sendMessageWithStreaming()
     }
   }
 
   const copyMessage = (content: string) => {
     navigator.clipboard.writeText(content)
-    toast.success('Message copié !')
+    toast.success('Copié !')
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass-card h-[70vh] flex flex-col"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-axial-blue to-axial-accent flex items-center justify-center">
-            <Bot className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-white">Expert IA</h3>
-            <p className="text-sm text-gray-400">Intelligence Stratégique</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-axial-accent">●</span>
-          <span className="text-xs text-gray-400">En ligne</span>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex flex-col h-full">
+      {/* Messages - zone scrollable */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <AnimatePresence>
           {messages.map((message) => (
             <motion.div
               key={message.id}
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.95 }}
-              transition={{ duration: 0.3 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`max-w-[80%] ${message.type === 'user' ? 'message-user' : 'message-assistant'}`}>
-                <div className="flex items-start gap-3">
+              <div className={`max-w-[85%] ${
+                message.type === 'user' 
+                  ? 'bg-axial-accent/30 rounded-2xl rounded-tr-md' 
+                  : 'bg-white/10 rounded-2xl rounded-tl-md'
+              } px-4 py-2.5`}>
+                <div className="flex items-start gap-2">
                   {message.type === 'assistant' && (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-axial-blue to-axial-accent flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-white" />
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-axial-blue to-axial-accent flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Bot className="w-3 h-3 text-white" />
                     </div>
                   )}
                   
-                  <div className="flex-1">
-                    {message.type === 'assistant' && message.businessContext && (
-                      <div className="text-xs text-axial-accent mb-1 font-medium">
-                        {message.businessContext}
-                      </div>
-                    )}
-                    
-                    <div className="prose prose-invert prose-sm max-w-none">
-                      {message.type === 'assistant' && message.sources && message.sources.length > 0 ? (
-                        <MessageWithCitations
-                          content={message.content}
-                          sources={message.sources}
-                          onViewDocument={(source) => {
-                            setSelectedSource(source)
-                            setIsModalOpen(true)
-                          }}
-                        />
-                      ) : (
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                  <div className="flex-1 min-w-0">
+                    <div className="prose prose-invert prose-sm max-w-none text-sm">
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      
+                      {/* Curseur de streaming */}
+                      {message.isStreaming && (
+                        <span className="inline-block w-2 h-4 bg-axial-accent ml-1 animate-pulse" />
                       )}
                     </div>
                     
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-gray-400">
-                        {message.timestamp.toLocaleTimeString()}
-                      </span>
-                      <button
-                        onClick={() => copyMessage(message.content)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/10 rounded"
-                      >
-                        <Copy className="w-3 h-3 text-gray-400" />
-                      </button>
-                    </div>
+                    {!message.isStreaming && (
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-[10px] text-gray-500">
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {message.type === 'assistant' && (
+                          <button
+                            onClick={() => copyMessage(message.content)}
+                            className="p-1 hover:bg-white/10 rounded transition-colors"
+                          >
+                            <Copy className="w-3 h-3 text-gray-400" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   
                   {message.type === 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-gray-600 to-gray-700 flex items-center justify-center flex-shrink-0">
-                      <User className="w-4 h-4 text-white" />
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-gray-600 to-gray-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <User className="w-3 h-3 text-white" />
                     </div>
                   )}
                 </div>
@@ -227,17 +225,17 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
           ))}
         </AnimatePresence>
 
-        {/* Loading indicator */}
-        {isLoading && (
+        {/* Loading dots */}
+        {isLoading && !messages.some(m => m.isStreaming) && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="message-assistant max-w-[80%]">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-axial-blue to-axial-accent flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-white" />
+            <div className="bg-white/10 rounded-2xl rounded-tl-md px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-r from-axial-blue to-axial-accent flex items-center justify-center">
+                  <Bot className="w-3 h-3 text-white" />
                 </div>
                 <div className="typing-indicator">
                   <div className="typing-dot"></div>
@@ -252,56 +250,35 @@ export default function ChatInterface({ selectedBusiness }: ChatInterfaceProps) 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-white/10">
-        <div className="flex gap-3">
-          <div className="flex-1 relative">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Posez votre question d'intelligence stratégique..."
-              className="input-liquid w-full resize-none min-h-[50px] max-h-[120px]"
-              rows={1}
-              disabled={isLoading}
-            />
-            <div className="absolute bottom-2 right-2 text-xs text-gray-500">
-              {input.length}/1000
-            </div>
-          </div>
+      {/* Input - compact */}
+      <div className="p-3 border-t border-white/10">
+        <div className="flex gap-2">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Posez votre question..."
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-axial-accent/50 placeholder-gray-500"
+            rows={1}
+            disabled={isLoading}
+          />
           
           <motion.button
-            onClick={sendMessage}
+            onClick={sendMessageWithStreaming}
             disabled={!input.trim() || isLoading}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="btn-liquid px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="p-2.5 rounded-xl bg-axial-accent text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
-            <span className="hidden sm:inline">
-              {isLoading ? 'Envoi...' : 'Envoyer'}
-            </span>
           </motion.button>
         </div>
         
-        <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3 h-3" />
-            <span>IA spécialisée {selectedBusiness.replace('_', ' ')}</span>
-          </div>
-          <span>Maj+Entrée pour nouvelle ligne</span>
+        <div className="flex items-center justify-center mt-2 text-[10px] text-gray-500">
+          <Sparkles className="w-3 h-3 mr-1" />
+          <span>Entrée pour envoyer</span>
         </div>
       </div>
-
-      {/* Modal de prévisualisation de document */}
-      <DocumentModal
-        isOpen={isModalOpen}
-        source={selectedSource}
-        onClose={() => {
-          setIsModalOpen(false)
-          setSelectedSource(null)
-        }}
-      />
-    </motion.div>
+    </div>
   )
 }

@@ -1,11 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Brain, TrendingUp, Sparkles, Shield, FileText, Download, Play, Clock } from 'lucide-react'
+import { Brain, TrendingUp, Sparkles, Shield, FileText, Download, Play, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import ReactMarkdown from 'react-markdown'
-import ProgressBar from './ProgressBar'
 
 interface AnalysisType {
   id: string
@@ -13,12 +11,11 @@ interface AnalysisType {
   description: string
   icon: any
   color: string
-  business: string[]
 }
 
 interface AnalysisPanelProps {
   analysisTypes: AnalysisType[]
-  selectedBusiness: string
+  initialAnalysisType?: string | null
 }
 
 interface AnalysisResult {
@@ -30,136 +27,138 @@ interface AnalysisResult {
   sources: any[]
 }
 
-export default function AnalysisPanel({ analysisTypes, selectedBusiness }: AnalysisPanelProps) {
-  const [activeAnalysis, setActiveAnalysis] = useState<string | null>(null)
+interface SSEProgress {
+  progress: number
+  step: string
+  message: string
+  done?: boolean
+  error?: boolean
+  data?: any
+}
+
+export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: AnalysisPanelProps) {
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<AnalysisResult[]>([])
-  const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null)
   
-  // États pour barre de progression
+  // États pour barre de progression SSE
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
+  const [progressStep, setProgressStep] = useState('')
+  
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  const filteredAnalyses = analysisTypes.filter(analysis => 
-    analysis.business.includes(selectedBusiness)
-  )
+  // Trouver le type d'analyse sélectionné
+  const selectedAnalysisType = analysisTypes.find(a => a.id === initialAnalysisType) || analysisTypes[0]
+  const Icon = selectedAnalysisType.icon
 
-  const runAnalysis = async (analysisId: string) => {
+  const runAnalysisWithSSE = async () => {
     if (!query.trim()) {
       toast.error('Veuillez entrer une requête d\'analyse')
       return
     }
 
     setIsLoading(true)
-    setActiveAnalysis(analysisId)
     setProgress(0)
+    setProgressMessage('🚀 Démarrage...')
+    setProgressStep('start')
 
-    // Étape 1 : Initialisation (10%)
-    setProgress(10)
-    setProgressMessage('🔍 Recherche documents RAG...')
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    // Créer un résultat placeholder pour le streaming
+    // Créer un résultat placeholder
     const resultId = Date.now().toString()
-    const placeholderResult: AnalysisResult = {
-      id: resultId,
-      title: `${analysisTypes.find(a => a.id === analysisId)?.name} - ${query}`,
-      content: '',
-      timestamp: new Date(),
-      type: analysisId,
-      sources: []
-    }
-
-    setResults(prev => [placeholderResult, ...prev])
-    setSelectedResult(placeholderResult)
-
-    // Étape 2 : Préparation (25%)
-    setProgress(25)
-    setProgressMessage('📝 Préparation de la requête...')
 
     try {
-      // Étape 3 : Génération (30%)
-      setProgress(30)
-      const isDeepAnalysis = analysisId.includes('approfondi')
-      setProgressMessage(
-        isDeepAnalysis 
-          ? '🌐 Génération rapport avec 60 sources (1-2 min)...'
-          : '🌐 Génération rapport (30-60s)...'
-      )
-
-      // Utiliser l'endpoint backend /extended-analysis pour le streaming
-      const response = await fetch('http://localhost:8006/extended-analysis', {
+      abortControllerRef.current = new AbortController()
+      
+      // Appel SSE pour streaming
+      const response = await fetch('http://localhost:8006/extended-analysis/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          business_type: selectedBusiness,
-          analysis_type: analysisId,
+          analysis_type: selectedAnalysisType.id,
           query: query,
-          title: placeholderResult.title
-        })
+          title: `${selectedAnalysisType.name} - ${query.substring(0, 50)}...`
+        }),
+        signal: abortControllerRef.current.signal
       })
 
-      // Simuler progression pendant attente backend
-      // (le backend prend 45-120s selon type, on simule progression)
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return 90 // Cap à 90% jusqu'à réponse
-          return prev + 5
-        })
-      }, 3000) // +5% toutes les 3s
-
-      const data = await response.json()
-      clearInterval(progressInterval)
-
       if (!response.ok) {
-        throw new Error('Erreur lors de l\'analyse')
+        throw new Error(`Erreur HTTP: ${response.status}`)
       }
 
-      // Étape 4 : Finalisation (95%)
-      setProgress(95)
-      setProgressMessage('✅ Formatage du rapport...')
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-      // Mettre à jour le résultat avec les données complètes
-      const finalResult: AnalysisResult = {
-        id: resultId,
-        title: data.title || placeholderResult.title,
-        content: data.content || 'Aucun contenu généré',
-        timestamp: new Date(),
-        type: analysisId,
-        sources: data.sources || []
+      if (!reader) {
+        throw new Error('Streaming non supporté')
       }
 
-      setResults(prev => prev.map(r => r.id === resultId ? finalResult : r))
-      setSelectedResult(finalResult)
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) break
 
-      // Étape 5 : Terminé (100%)
-      setProgress(100)
-      setProgressMessage('✅ Rapport généré avec succès!')
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      toast.success('✅ Analyse terminée avec succès !')
+        buffer += decoder.decode(value, { stream: true })
+        
+        // Traiter les événements SSE
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || '' // Garder le dernier fragment incomplet
 
-    } catch (error) {
-      console.error('Erreur analyse:', error)
-      toast.error('❌ Erreur lors de l\'analyse')
-      
-      // Supprimer le résultat en cas d'erreur
-      setResults(prev => prev.filter(r => r.id !== resultId))
-      setSelectedResult(null)
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data: SSEProgress = JSON.parse(line.substring(6))
+              
+              // Mettre à jour la progression
+              setProgress(data.progress)
+              setProgressMessage(data.message)
+              setProgressStep(data.step)
+
+              // Si terminé avec succès
+              if (data.done && data.data) {
+                const finalResult: AnalysisResult = {
+                  id: resultId,
+                  title: data.data.title,
+                  content: data.data.content,
+                  timestamp: new Date(),
+                  type: selectedAnalysisType.id,
+                  sources: data.data.sources || []
+                }
+
+                setResults(prev => [finalResult, ...prev])
+                toast.success('✅ Rapport généré avec succès !')
+              }
+
+              // Si erreur
+              if (data.error) {
+                throw new Error(data.message)
+              }
+            } catch (parseError) {
+              // Ignorer les erreurs de parsing JSON partiel
+            }
+          }
+        }
+      }
+
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error('Erreur SSE:', error)
+        toast.error(`❌ Erreur: ${error.message || 'Erreur lors de l\'analyse'}`)
+      }
     } finally {
       setIsLoading(false)
-      setActiveAnalysis(null)
       setProgress(0)
       setProgressMessage('')
+      setProgressStep('')
     }
   }
 
   const exportToPDF = async (result: AnalysisResult) => {
     try {
+      toast.loading('📄 Génération du PDF...')
+      
       const response = await fetch('http://localhost:8004/generate', {
         method: 'POST',
         headers: {
@@ -171,7 +170,6 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
           content: result.content,
           sources: result.sources,
           metadata: {
-            business_type: selectedBusiness,
             generated_at: result.timestamp
           }
         })
@@ -183,7 +181,6 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
 
       const data = await response.json()
       
-      // Télécharger le PDF
       const pdfResponse = await fetch(`http://localhost:8004/export/${data.id}`)
       if (!pdfResponse.ok) {
         throw new Error('Erreur téléchargement PDF')
@@ -193,220 +190,200 @@ export default function AnalysisPanel({ analysisTypes, selectedBusiness }: Analy
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${result.title}.pdf`
+      a.download = `${result.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      toast.success('PDF exporté avec succès !')
+      toast.dismiss()
+      toast.success('✅ PDF téléchargé avec succès !')
 
     } catch (error) {
+      toast.dismiss()
       console.error('Erreur export PDF:', error)
-      toast.error('Erreur lors de l\'export PDF')
+      toast.error('❌ Erreur lors de l\'export PDF')
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      runAnalysisWithSSE()
     }
   }
 
   return (
     <div className="space-y-6">
-      {/* Barre de progression */}
-      <ProgressBar 
-        progress={progress}
-        message={progressMessage}
-        isVisible={isLoading}
-      />
-      {/* Query input */}
+      {/* Barre de progression SSE temps réel */}
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="glass-card border border-axial-accent/30"
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="relative">
+                <div className="w-12 h-12 rounded-full bg-axial-accent/20 flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-axial-accent animate-spin" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center pulse-glow">
+                  <span className="text-xs text-white font-bold">{Math.round(progress)}%</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-medium">{progressMessage}</p>
+                <p className="text-sm text-gray-400">Étape: {progressStep}</p>
+              </div>
+            </div>
+            
+            {/* Barre de progression animée */}
+            <div className="relative h-3 bg-white/10 rounded-full overflow-hidden">
+              <motion.div
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-axial-accent to-emerald-400 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              />
+              {/* Effet shimmer */}
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                animate={{ x: ['-100%', '100%'] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              />
+            </div>
+            
+            {/* Estimation temps restant */}
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              {progress < 35 ? 'Préparation...' : 
+               progress < 85 ? 'Génération en cours (45-90s restantes)...' : 
+               'Finalisation...'}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Carte d'analyse sélectionnée avec champ de saisie */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="glass-card"
       >
-        <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-          <Brain className="w-6 h-6 text-axial-accent" />
-          Analyses Spécialisées
-        </h2>
+        {/* Type d'analyse sélectionné */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className={`p-4 rounded-xl bg-gradient-to-r ${selectedAnalysisType.color} flex-shrink-0`}>
+            <Icon className="w-8 h-8 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-white">
+              {selectedAnalysisType.name}
+            </h2>
+            <p className="text-gray-400">
+              {selectedAnalysisType.description}
+            </p>
+          </div>
+        </div>
         
+        {/* Champ de saisie */}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Sujet d'analyse
+              Décrivez votre sujet d'analyse
             </label>
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ex: Analyse du marché des cryptomonnaies en 2024..."
-              className="input-liquid w-full min-h-[80px] resize-none"
+              onKeyPress={handleKeyPress}
+              placeholder="Ex: Analyse du marché des cryptomonnaies en 2024, stratégies des leaders et opportunités..."
+              className="input-liquid w-full min-h-[120px] resize-none"
               disabled={isLoading}
             />
+            <p className="text-xs text-gray-500 mt-2">
+              Ctrl+Entrée pour lancer l'analyse
+            </p>
           </div>
+          
+          {/* Bouton de génération */}
+          <motion.button
+            onClick={runAnalysisWithSSE}
+            disabled={isLoading || !query.trim()}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className={`w-full btn-liquid py-4 text-lg font-semibold flex items-center justify-center gap-3 
+              ${isLoading || !query.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isLoading ? (
+              <>
+                <Clock className="w-5 h-5 animate-spin" />
+                Génération en cours... ({progress}%)
+              </>
+            ) : (
+              <>
+                <Play className="w-5 h-5" />
+                Générer le rapport
+              </>
+            )}
+          </motion.button>
         </div>
       </motion.div>
 
-      {/* Analysis buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-card"
-      >
-        <h3 className="text-lg font-semibold text-white mb-4">
-          Types d'analyses disponibles
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredAnalyses.map((analysis) => {
-            const Icon = analysis.icon
-            const isActive = activeAnalysis === analysis.id
-            
-            return (
-              <motion.button
-                key={analysis.id}
-                onClick={() => runAnalysis(analysis.id)}
-                disabled={isLoading || !query.trim()}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`glass-button p-6 text-left transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isActive ? 'ring-2 ring-axial-accent bg-white/20' : ''
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className={`p-3 rounded-xl bg-gradient-to-r ${analysis.color} flex-shrink-0`}>
-                    {isActive && isLoading ? (
-                      <div className="loading-liquid w-6 h-6"></div>
-                    ) : (
-                      <Icon className="w-6 h-6 text-white" />
-                    )}
-                  </div>
-                  
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-white mb-1">
-                      {analysis.name}
-                    </h4>
-                    <p className="text-sm text-gray-400 mb-2">
-                      {analysis.description}
-                    </p>
-                    
-                    <div className="flex items-center gap-2 text-xs text-axial-accent">
-                      {isActive && isLoading ? (
-                        <>
-                          <Clock className="w-3 h-3" />
-                          <span>Analyse en cours...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3" />
-                          <span>Lancer l'analyse</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </motion.button>
-            )
-          })}
-        </div>
-      </motion.div>
-
-      {/* Results */}
+      {/* Résultats - UNIQUEMENT bouton téléchargement, PAS de texte brut */}
       {results.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="space-y-4"
+          transition={{ delay: 0.2 }}
         >
-          {/* Results list */}
           <div className="glass-card">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Résultats d'analyses ({results.length})
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              Rapports générés ({results.length})
             </h3>
             
             <div className="space-y-3">
               {results.map((result) => {
                 const analysisType = analysisTypes.find(a => a.id === result.type)
-                const Icon = analysisType?.icon || FileText
+                const ResultIcon = analysisType?.icon || FileText
                 
                 return (
                   <motion.div
                     key={result.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className={`p-4 rounded-xl cursor-pointer transition-all duration-300 ${
-                      selectedResult?.id === result.id 
-                        ? 'bg-white/20 ring-1 ring-axial-accent' 
-                        : 'bg-white/5 hover:bg-white/10'
-                    }`}
-                    onClick={() => setSelectedResult(result)}
+                    className="p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all duration-300 border border-white/10"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-lg bg-gradient-to-r ${analysisType?.color || 'from-gray-500 to-gray-600'}`}>
-                          <Icon className="w-4 h-4 text-white" />
+                          <ResultIcon className="w-4 h-4 text-white" />
                         </div>
                         <div>
                           <h4 className="font-medium text-white text-sm">
                             {result.title}
                           </h4>
                           <p className="text-xs text-gray-400">
-                            {result.timestamp.toLocaleString()}
+                            {result.timestamp.toLocaleString()} • {result.sources?.length || 0} sources
                           </p>
                         </div>
                       </div>
                       
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          exportToPDF(result)
-                        }}
-                        className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                      {/* SEUL BOUTON: Télécharger PDF */}
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => exportToPDF(result)}
+                        className="btn-liquid flex items-center gap-2 px-4 py-2"
                       >
-                        <Download className="w-4 h-4 text-axial-accent" />
-                      </button>
+                        <Download className="w-4 h-4" />
+                        Télécharger PDF
+                      </motion.button>
                     </div>
                   </motion.div>
                 )
               })}
             </div>
           </div>
-
-          {/* Selected result content */}
-          {selectedResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass-card"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">
-                  {selectedResult.title}
-                </h3>
-                <button
-                  onClick={() => exportToPDF(selectedResult)}
-                  className="btn-liquid flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Export PDF
-                </button>
-              </div>
-              
-              <div className="prose prose-invert prose-sm max-w-none bg-black/20 p-6 rounded-xl">
-                <ReactMarkdown>{selectedResult.content}</ReactMarkdown>
-              </div>
-              
-              {selectedResult.sources.length > 0 && (
-                <div className="mt-6">
-                  <h4 className="font-semibold text-white mb-3">Sources</h4>
-                  <div className="space-y-2">
-                    {selectedResult.sources.map((source, index) => (
-                      <div key={index} className="text-sm text-gray-400 p-3 bg-black/20 rounded-lg">
-                        <span className="text-axial-accent">[Réf. {index + 1}]</span> {source.text}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
         </motion.div>
       )}
     </div>

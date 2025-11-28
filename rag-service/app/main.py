@@ -99,23 +99,28 @@ def call_perplexity(prompt: str, analysis_type: str = "general") -> str:
     if not PERPLEXITY_API_KEY:
         return f"[Perplexity API key not configured]\n\nAnalysis Type: {analysis_type}\n\n" + prompt[:500]
     
-    # Specialized system prompts based on analysis type with RAG priority
-    system_prompts = {
-        "synthese_executive": """Tu es un consultant senior en stratégie d'entreprise. Produis des synthèses exécutives claires et actionnables.
-PRIORITÉ: Base-toi d'abord sur les documents internes fournis [Réf. X], puis enrichis avec des données web récentes si nécessaire.""",
-        "analyse_concurrentielle": """Tu es un expert en intelligence concurrentielle. Analyse les dynamiques de marché et identifie les positionnements stratégiques.
-PRIORITÉ: Utilise les documents internes fournis [Réf. X] en premier lieu, complète avec des insights web si pertinent.""",
-        "veille_technologique": """Tu es un expert en innovation technologique. Identifie les tendances tech émergentes et leurs implications business.
-PRIORITÉ: Sources internes [Réf. X] d'abord, actualités tech récentes du web ensuite.""",
-        "analyse_risques": """Tu es un expert en risk management. Effectue des analyses de risques méthodiques et propose des mesures de mitigation.
-PRIORITÉ: Documents internes [Réf. X] comme base, informations web pour contexte actuel.""",
-        "etude_marche": """Tu es un analyste marché senior. Réalise des études de marché approfondies avec projections et scénarios.
-PRIORITÉ: Données internes [Réf. X] en priorité, statistiques web récentes en complément.""",
-        "general": """Tu es un consultant senior en stratégie d'entreprise.
-PRIORITÉ: Utilise d'abord les documents internes fournis [Réf. X], puis complète avec des données web."""
-    }
+    # Instructions sur les sources fiables
+    trusted_sources = """
+## SOURCES PRIORITAIRES À PRIVILÉGIER
+📊 Institutionnels : INSEE, Banque de France, AMF, ACPR, BCE, EBA, ministères français
+📰 Médias réputés : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
+🎓 Académiques/Conseils : McKinsey, BCG, Bain, Harvard Business Review, MIT Technology Review
+💻 Tech : Gartner, IDC, Forrester, Wired, ZDNet
+🛍️ Commerce : FEVAD, LSA, CREDOC, Retail Dive
+
+⛔ SOURCES À EXCLURE : Blogs personnels, forums, réseaux sociaux, sites non professionnels
+
+IMPORTANT: Ne mentionne JAMAIS le secteur d'activité spécifique dans ta réponse.
+"""
     
-    system_prompt = system_prompts.get(analysis_type, system_prompts["general"])
+    # System prompt générique avec sources fiables
+    system_prompt = f"""Tu es un consultant senior en stratégie d'entreprise.
+
+{trusted_sources}
+
+Produis des analyses claires et actionnables en utilisant UNIQUEMENT les sources fiables listées.
+Cite tes sources avec [Réf. X] et URLs quand disponibles.
+Base-toi d'abord sur les documents internes fournis, puis enrichis avec des données web récentes si nécessaire."""
     
     try:
         client = OpenAI(
@@ -143,17 +148,20 @@ async def perform_analysis(analysis_type: str, payload: AnalysisPayload) -> Anal
         # MODE PERPLEXITY UNIQUEMENT - Pas de recherche vectorielle interne
         passages = []  # Pas de RAG interne
         
-        # Créer un prompt direct pour Perplexity (qui fera sa propre recherche web)
+        # Créer un prompt direct pour Perplexity avec sources fiables
         simple_prompt = f"""
 Analyse demandée : {analysis_type.replace('_', ' ').title()}
 
 Question : {payload.query}
 
 Instructions :
-- Utilise tes capacités de recherche web pour trouver les informations les plus récentes
+- Utilise tes capacités de recherche web sur des sources fiables et spécialisées
+- Privilégie : INSEE, autorités officielles, cabinets de conseil (McKinsey, BCG), médias réputés (Les Échos, FT, Bloomberg)
+- Évite : blogs personnels, forums, sites non professionnels
 - Fournis une analyse détaillée et structurée
-- Cite tes sources avec des URLs quand possible
+- Cite tes sources avec [Réf. X] et URLs quand possible
 - Format professionnel de cabinet de conseil
+- Ne mentionne JAMAIS le secteur d'activité spécifique
 """
         
         # Get AI analysis with Perplexity (web search only)
