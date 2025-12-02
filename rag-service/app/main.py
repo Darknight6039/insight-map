@@ -99,28 +99,42 @@ def call_perplexity(prompt: str, analysis_type: str = "general") -> str:
     if not PERPLEXITY_API_KEY:
         return f"[Perplexity API key not configured]\n\nAnalysis Type: {analysis_type}\n\n" + prompt[:500]
     
-    # Instructions sur les sources fiables
+    # Instructions sur les sources - INSTITUTIONS ET CABINETS UNIQUEMENT
     trusted_sources = """
-## SOURCES PRIORITAIRES À PRIVILÉGIER
-📊 Institutionnels : INSEE, Banque de France, AMF, ACPR, BCE, EBA, ministères français
-📰 Médias réputés : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
-🎓 Académiques/Conseils : McKinsey, BCG, Bain, Harvard Business Review, MIT Technology Review
-💻 Tech : Gartner, IDC, Forrester, Wired, ZDNet
-🛍️ Commerce : FEVAD, LSA, CREDOC, Retail Dive
+## SOURCES AUTORISÉES (EXCLUSIVEMENT)
 
-⛔ SOURCES À EXCLURE : Blogs personnels, forums, réseaux sociaux, sites non professionnels
+### INSTITUTIONS OFFICIELLES (70% minimum)
+📊 France : INSEE, Banque de France, ACPR, AMF, DARES, DGE, France Stratégie
+📊 Europe : BCE, EBA, ESMA, Commission européenne, Eurostat
+📊 International : OCDE, FMI, BRI, Banque Mondiale
+
+### CABINETS DE CONSEIL (30% maximum)
+🎓 Stratégie : McKinsey & Company, BCG, Bain & Company
+🎓 Audit/Conseil : Deloitte, PwC, EY, KPMG
+🎓 Tech : Gartner, IDC, Forrester (analyses tech uniquement)
+
+⛔ SOURCES STRICTEMENT EXCLUES :
+- Médias et presse (Les Échos, Bloomberg, FT, Reuters, etc.)
+- Blogs, forums, réseaux sociaux
+- Entreprises privées (hors cabinets listés)
+- Sites d'actualité
+
+## FORMAT CITATION APA OBLIGATOIRE
+- Citation inline : (Auteur, Année) - Ex: (INSEE, 2024)
+- Sources multiples : (Source1, 2024; Source2, 2024)
+- Section finale : "## 📚 Références Bibliographiques" au format APA
 
 IMPORTANT: Ne mentionne JAMAIS le secteur d'activité spécifique dans ta réponse.
 """
     
-    # System prompt générique avec sources fiables
+    # System prompt avec sources institutionnelles et cabinets uniquement
     system_prompt = f"""Tu es un consultant senior en stratégie d'entreprise.
 
 {trusted_sources}
 
-Produis des analyses claires et actionnables en utilisant UNIQUEMENT les sources fiables listées.
-Cite tes sources avec [Réf. X] et URLs quand disponibles.
-Base-toi d'abord sur les documents internes fournis, puis enrichis avec des données web récentes si nécessaire."""
+Produis des analyses claires et actionnables en utilisant UNIQUEMENT les sources institutionnelles et cabinets de conseil listés.
+Cite tes sources au format APA: (Auteur, Année).
+Termine TOUJOURS par une section "## 📚 Références Bibliographiques" au format APA complet."""
     
     try:
         client = OpenAI(
@@ -148,18 +162,19 @@ async def perform_analysis(analysis_type: str, payload: AnalysisPayload) -> Anal
         # MODE PERPLEXITY UNIQUEMENT - Pas de recherche vectorielle interne
         passages = []  # Pas de RAG interne
         
-        # Créer un prompt direct pour Perplexity avec sources fiables
+        # Créer un prompt direct pour Perplexity avec sources institutionnelles et cabinets uniquement
         simple_prompt = f"""
 Analyse demandée : {analysis_type.replace('_', ' ').title()}
 
 Question : {payload.query}
 
-Instructions :
-- Utilise tes capacités de recherche web sur des sources fiables et spécialisées
-- Privilégie : INSEE, autorités officielles, cabinets de conseil (McKinsey, BCG), médias réputés (Les Échos, FT, Bloomberg)
-- Évite : blogs personnels, forums, sites non professionnels
-- Fournis une analyse détaillée et structurée
-- Cite tes sources avec [Réf. X] et URLs quand possible
+Instructions STRICTES :
+- Utilise UNIQUEMENT des sources institutionnelles (INSEE, BCE, Banque de France, ACPR, AMF, OCDE, FMI, Eurostat)
+- Et des cabinets de conseil (McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, IDC, Forrester)
+- AUCUNE source média (Les Échos, Bloomberg, FT, etc.) - STRICTEMENT INTERDIT
+- Cite tes sources au format APA : (Auteur, Année)
+- Exemple : "Le marché croît de 15% (INSEE, 2024)"
+- Termine par une section "## 📚 Références Bibliographiques" au format APA complet
 - Format professionnel de cabinet de conseil
 - Ne mentionne JAMAIS le secteur d'activité spécifique
 """

@@ -77,19 +77,19 @@ task_type="chat"  # Conversations
 
 ### Reasoning (Non Utilisé)
 
-**Modèle**: `sonar-reasoning`  
-**Max tokens**: 16 000 (configuré mais non utilisé)  
+**Modèle**: `sonar-reasoning-pro`  
+**Max tokens**: 20 000 (configuré mais non utilisé)  
 **Statut**: Réservé pour usage futur  
 
 **Configuration**:
 ```python
-# backend-service/app/main.py (ligne 48)
-"reasoning": os.getenv("PERPLEXITY_MODEL_REASONING", "sonar-reasoning")
+# backend-service/app/main.py (ligne 50)
+"reasoning": os.getenv("PERPLEXITY_MODEL_REASONING", "sonar-reasoning-pro")
 
 # Aucun endpoint ne l'utilise actuellement
 ```
 
-**Note**: Ce modèle est configuré pour des analyses complexes multi-étapes futures mais n'est pas actuellement utilisé dans l'application.
+**Note**: Ce modèle est configuré pour des analyses complexes multi-étapes futures mais n'est pas actuellement utilisé dans l'application. Migration depuis `sonar-reasoning` (déprécié le 15/12/2025).
 
 ---
 
@@ -109,9 +109,9 @@ def get_model_for_task(task_type: str) -> str:
 
 ```python
 max_tokens_config = {
-    "sonar": 6000,
-    "sonar-pro": 12000,  # Rapports standards ET approfondis
-    "sonar-reasoning": 16000  # Non utilisé actuellement
+    "sonar": 8000,
+    "sonar-pro": 16000,  # Rapports standards ET approfondis
+    "sonar-reasoning-pro": 20000  # Non utilisé actuellement (migration depuis sonar-reasoning)
 }
 ```
 
@@ -182,7 +182,7 @@ PERPLEXITY_API_KEY=pplx-xxxxx
 # Configuration multi-modèles
 PERPLEXITY_MODEL_CHAT=sonar
 PERPLEXITY_MODEL_ANALYSIS=sonar-pro
-PERPLEXITY_MODEL_REASONING=sonar-reasoning
+PERPLEXITY_MODEL_REASONING=sonar-reasoning-pro
 ```
 
 ### Valeurs par Défaut
@@ -190,7 +190,7 @@ PERPLEXITY_MODEL_REASONING=sonar-reasoning
 Si les variables ne sont pas définies, l'application utilise les valeurs par défaut:
 - Chat: `sonar`
 - Analysis: `sonar-pro`
-- Reasoning: `sonar-reasoning`
+- Reasoning: `sonar-reasoning-pro`
 
 ---
 
@@ -226,7 +226,7 @@ curl http://localhost:8006/health | jq '.perplexity_models'
 {
   "chat": "sonar",
   "analysis": "sonar-pro",
-  "reasoning": "sonar-reasoning"
+  "reasoning": "sonar-reasoning-pro"
 }
 ```
 
@@ -288,10 +288,10 @@ curl http://localhost:8006/test-perplexity | jq
       "model": "sonar-pro",
       "status": "✅ OK"
     },
-    "reasoning": {
-      "model": "sonar-reasoning",
-      "status": "✅ OK"
-    }
+  "reasoning": {
+    "model": "sonar-reasoning-pro",
+    "status": "✅ OK"
+  }
   }
 }
 ```
@@ -332,15 +332,15 @@ curl -X POST http://localhost:8006/extended-analysis \
 
 **Réponse**: sonar-pro offre la meilleure qualité pour la génération longue (8000-10000 mots) avec recherche web extensive. Avec 12000 tokens, il peut générer aussi bien des rapports standards (15-25 sources) que des rapports approfondis (60 sources) sans limitation.
 
-### Pourquoi ne pas utiliser sonar-reasoning?
+### Pourquoi ne pas utiliser sonar-reasoning-pro?
 
-**Réponse**: sonar-reasoning (16000 tokens) est conçu pour des analyses complexes multi-étapes avec raisonnement structuré. Actuellement, nos rapports n'utilisent pas ce niveau de complexité. sonar-pro (12000 tokens) est suffisant et plus économique.
+**Réponse**: sonar-reasoning-pro (20000 tokens) est conçu pour des analyses complexes multi-étapes avec raisonnement structuré. Actuellement, nos rapports n'utilisent pas ce niveau de complexité. sonar-pro (16000 tokens) est suffisant et plus économique.
 
 ### Peut-on changer le modèle dynamiquement?
 
 **Réponse**: Oui, via les variables d'environnement. Modifier `.env` puis redémarrer:
 ```bash
-PERPLEXITY_MODEL_ANALYSIS=sonar-reasoning  # Exemple: tester reasoning
+PERPLEXITY_MODEL_ANALYSIS=sonar-reasoning-pro  # Exemple: tester reasoning
 docker compose restart backend-service
 ```
 

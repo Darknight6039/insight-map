@@ -110,6 +110,23 @@ services:
       - ./data:/app/data:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
 
+  scheduler-service:
+    build: ./scheduler-service
+    env_file: .env
+    ports:
+      - "8007:8007"
+    depends_on:
+      - postgres
+      - backend-service
+      - report-service
+    networks:
+      - insight-network
+    environment:
+      - DATABASE_URL=postgresql://insight_user:insight_password_2024@postgres:5432/insight_db
+      - BACKEND_SERVICE_URL=http://backend-service:8006
+      - REPORT_URL=http://report-service:8004
+    restart: unless-stopped
+
   frontend-gradio:
     build: ./frontend-gradio
     env_file: .env
@@ -140,9 +157,11 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_BACKEND_URL=http://localhost:8006
+      - NEXT_PUBLIC_SCHEDULER_URL=http://localhost:8007
     depends_on:
       - gateway-api
       - backend-service
+      - scheduler-service
     networks:
       - insight-network
     restart: unless-stopped

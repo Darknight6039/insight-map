@@ -116,6 +116,44 @@ body {
   transform: scale(0.98);
 }
 
+/* Glass input field */
+.glass-input {
+  @apply rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all var(--transition-normal) var(--easing-smooth);
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--axial-accent);
+  box-shadow: 0 0 0 2px rgba(0, 194, 178, 0.2);
+}
+
+.glass-input option {
+  background: var(--primary);
+  color: white;
+}
+
+/* Primary action button */
+.primary-button {
+  @apply rounded-xl px-6 py-3 font-medium text-white;
+  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
+  border: none;
+  transition: all var(--transition-normal) var(--easing-smooth);
+}
+
+.primary-button:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 12px 35px rgba(0, 194, 178, 0.35),
+    0 0 20px rgba(0, 163, 255, 0.2);
+}
+
+.primary-button:active {
+  transform: translateY(0) scale(0.98);
+}
+
 /* ============================================
    ENHANCED ANIMATIONS
    ============================================ */

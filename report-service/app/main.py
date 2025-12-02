@@ -630,29 +630,62 @@ class ReportFormatter:
     def _clean_markdown(self, text, citations_map=None):
         """Nettoie le texte des symboles markdown et convertit citations en format APA"""
         import re
+        from html import escape
         
-        # Retirer les ** pour le gras (on utilise les balises HTML à la place)
-        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        # IMPORTANT: D'abord échapper les caractères HTML spéciaux AVANT de créer nos balises
+        # Ceci évite les erreurs "unclosed tags" quand le texte contient < ou >
+        # On utilise une approche qui préserve les patterns markdown qu'on va convertir
         
-        # Retirer les * pour l'italique
-        text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+        # Protéger temporairement les patterns markdown qu'on veut garder
+        # avec des placeholders uniques
+        placeholders = {}
+        placeholder_counter = [0]
         
-        # Retirer les `` pour le code inline
-        text = re.sub(r'`(.+?)`', r'<font name="Courier">\1</font>', text)
+        def protect_pattern(match):
+            key = f"__PLACEHOLDER_{placeholder_counter[0]}__"
+            placeholders[key] = match.group(0)
+            placeholder_counter[0] += 1
+            return key
+        
+        # Protéger les patterns markdown
+        text = re.sub(r'\*\*(.+?)\*\*', protect_pattern, text)  # **bold**
+        text = re.sub(r'\*([^*]+?)\*', protect_pattern, text)   # *italic*
+        text = re.sub(r'`([^`]+?)`', protect_pattern, text)     # `code`
+        
+        # Maintenant échapper les caractères HTML dans le reste du texte
+        text = escape(text)
+        
+        # Restaurer et convertir les patterns markdown protégés
+        for key, original in placeholders.items():
+            # Convertir le pattern markdown en HTML
+            if original.startswith('**'):
+                # Bold: **text** -> <b>text</b>
+                inner = escape(original[2:-2])
+                replacement = f'<b>{inner}</b>'
+            elif original.startswith('*'):
+                # Italic: *text* -> <i>text</i>
+                inner = escape(original[1:-1])
+                replacement = f'<i>{inner}</i>'
+            elif original.startswith('`'):
+                # Code: `text` -> <font name="Courier">text</font>
+                inner = escape(original[1:-1])
+                replacement = f'<font name="Courier">{inner}</font>'
+            else:
+                replacement = escape(original)
+            
+            text = text.replace(key, replacement)
         
         # Convertir citations [1], [2], [3] en format APA (Auteur, année)
         if citations_map:
             def replace_citation(match):
                 num = match.group(1)
                 if num in citations_map:
-                    return f'<font size="9" color="#666666">{citations_map[num]}</font>'
+                    citation_text = escape(citations_map[num])
+                    return f'<font size="9" color="#666666">{citation_text}</font>'
                 return match.group(0)
             
             # Remplacer les citations simples [1]
             text = re.sub(r'\[(\d+)\]', replace_citation, text)
-            
-            # Remplacer les citations multiples [1][2][3]
-            # Déjà géré par le pattern ci-dessus qui les traite individuellement
         else:
             # Fallback : conserver les citations [1], [2], etc. en format réduit
             text = re.sub(r'\[(\d+)\]', r'<sup><font size="8">[\1]</font></sup>', text)

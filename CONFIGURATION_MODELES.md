@@ -12,7 +12,7 @@ L'application utilise une stratégie multi-modèles Perplexity optimisée par ca
 |--------|-------|------------|----------------|-----------|
 | `sonar` | Chat rapide, tests | 4000 | $0.001 | `/chat`, `/chat/stream`, `/test-perplexity` |
 | `sonar-pro` | Rapports longs (5000+ mots) | 8000 | $0.003 | `/extended-analysis`, `/business-analysis` |
-| `sonar-reasoning` | Analyses complexes | 8000 | $0.005 | Configurable pour analyses expertes |
+| `sonar-reasoning-pro` | Analyses complexes | 20000 | $0.005 | Configurable pour analyses expertes (migration depuis sonar-reasoning) |
 
 ### Principes de sélection
 
@@ -28,7 +28,7 @@ L'application utilise une stratégie multi-modèles Perplexity optimisée par ca
 - Web search profond avec citations multiples
 - Qualité maximale pour livrables clients
 
-**3. Analyses expertes** → `sonar-reasoning`
+**3. Analyses expertes** → `sonar-reasoning-pro`
 - Raisonnement structuré multi-étapes
 - Analyses de risques complexes
 - Modélisation de scénarios
@@ -47,7 +47,7 @@ PERPLEXITY_API_KEY=pplx-xxxxxxxxxxxxx
 # Configuration multi-modèles (optionnel, valeurs par défaut ci-dessous)
 PERPLEXITY_MODEL_CHAT=sonar
 PERPLEXITY_MODEL_ANALYSIS=sonar-pro
-PERPLEXITY_MODEL_REASONING=sonar-reasoning
+PERPLEXITY_MODEL_REASONING=sonar-reasoning-pro
 ```
 
 ### Valeurs par défaut
@@ -55,7 +55,7 @@ PERPLEXITY_MODEL_REASONING=sonar-reasoning
 Si les variables `PERPLEXITY_MODEL_*` ne sont pas définies, le système utilise automatiquement :
 - Chat : `sonar`
 - Analysis : `sonar-pro`
-- Reasoning : `sonar-reasoning`
+- Reasoning : `sonar-reasoning-pro`
 
 **Backward compatibility** : L'ancienne variable `PERPLEXITY_MODEL` n'est plus utilisée mais peut rester présente sans effet.
 
@@ -139,7 +139,7 @@ Réponse attendue :
   "perplexity_models": {
     "chat": "sonar",
     "analysis": "sonar-pro",
-    "reasoning": "sonar-reasoning"
+    "reasoning": "sonar-reasoning-pro"
   },
   "version": "3.1-multi-model"
 }
@@ -169,7 +169,7 @@ Réponse attendue :
       "response": "I'm ready to help with detailed analysis."
     },
     "reasoning": {
-      "model": "sonar-reasoning",
+      "model": "sonar-reasoning-pro",
       "status": "✅ OK",
       "response": "Let me reason through this systematically."
     }
@@ -177,7 +177,7 @@ Réponse attendue :
   "config": {
     "chat": "sonar",
     "analysis": "sonar-pro",
-    "reasoning": "sonar-reasoning"
+    "reasoning": "sonar-reasoning-pro"
   }
 }
 ```
@@ -231,7 +231,7 @@ Exemple de sortie :
 ```
      142 INFO: Using model: sonar for task: chat (max_tokens: 4000)
       18 INFO: Using model: sonar-pro for task: analysis (max_tokens: 8000)
-       3 INFO: Using model: sonar-reasoning for task: reasoning (max_tokens: 8000)
+       3 INFO: Using model: sonar-reasoning-pro for task: reasoning (max_tokens: 20000)
 ```
 
 **3. Détecter les erreurs par modèle**
@@ -251,7 +251,7 @@ INFO: Using model: sonar for task: chat (max_tokens: 4000)
 ```
 ERROR: Perplexity API error with sonar-pro: 401 Unauthorized
 ERROR: Perplexity API error with sonar: 429 Rate limit exceeded
-ERROR: Perplexity API error with sonar-reasoning: 404 Model not found
+ERROR: Perplexity API error with sonar-reasoning-pro: 404 Model not found
 ```
 
 ## Troubleshooting
@@ -309,7 +309,7 @@ docker-compose logs backend-service | grep "Prompt très long"
 - ✅ Format cabinet de conseil professionnel
 - ✅ Citations APA académiques complètes
 
-**Analyses expertes** (sonar-reasoning) :
+**Analyses expertes** (sonar-reasoning-pro) :
 - ✅ Raisonnement structuré multi-étapes
 - ✅ Modélisation de scénarios complexes
 - ✅ Qualité maximale pour cas critiques

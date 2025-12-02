@@ -47,7 +47,7 @@ DOCUMENT_SERVICE_URL = "http://document-service:8001"
 PERPLEXITY_MODELS = {
     "chat": os.getenv("PERPLEXITY_MODEL_CHAT", "sonar"),              # Chat court, tests
     "analysis": os.getenv("PERPLEXITY_MODEL_ANALYSIS", "sonar-pro"),  # TOUS les rapports
-    "reasoning": os.getenv("PERPLEXITY_MODEL_REASONING", "sonar-reasoning") # Réservé usage futur
+    "reasoning": os.getenv("PERPLEXITY_MODEL_REASONING", "sonar-reasoning-pro") # Réservé usage futur - Migration depuis sonar-reasoning (déprécié le 15/12/2025)
 }
 
 def get_model_for_task(task_type: str) -> str:
@@ -77,6 +77,13 @@ class ChatRequest(BaseModel):
     message: str
     business_type: Optional[str] = None
     conversation_history: Optional[List[Dict]] = []
+
+class SchedulerAnalysisRequest(BaseModel):
+    """Request model for scheduler-service watch executions"""
+    query: str
+    analysis_type: str
+    sector: Optional[str] = "general"
+    deep_analysis: Optional[bool] = False
 
 class ChatResponse(BaseModel):
     response: str
@@ -257,16 +264,14 @@ def create_optimized_prompt(business_type: str, analysis_type: str, query: str, 
 - Utilise recherche web Perplexity exhaustive
 - MINIMUM 60 sources organisées par catégorie
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) :
-- 36 sources institutionnelles (60%) : INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA
-- 12 sources académiques (20%) : McKinsey, BCG, Bain, think tanks (OFCE, Bruegel, CEPII)
-- 9 sources média réputé (15%) : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
-- 3 sources complémentaires (5%) : vérifiées et pertinentes
+## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles (70%) : INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA, OCDE, FMI
+- 18 sources cabinets de conseil (30%) : McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG
+- AUCUNE source média (Les Échos, Bloomberg, FT, etc.) - STRICTEMENT INTERDIT
 
-## RECHERCHE EN 3 PHASES :
-Phase 1 : 20 sources institutionnelles minimum
-Phase 2 : 20 sources académiques/études minimum
-Phase 3 : 20 sources média/complémentaires minimum
+## RECHERCHE EN 2 PHASES :
+Phase 1 : 42 sources institutionnelles minimum (70%)
+Phase 2 : 18 sources cabinets de conseil maximum (30%)
 
 ## STRUCTURE RAPPORT EXHAUSTIF :
 
@@ -298,11 +303,11 @@ Phase 3 : 20 sources média/complémentaires minimum
    - Analyses de sensibilité sur 4-5 variables
    - Tableaux financiers détaillés
 
-6. **Bibliographie Organisée** (60 sources MINIMUM)
-   - Section Sources Institutionnelles (36 sources)
-   - Section Sources Académiques (12 sources)
-   - Section Média Réputé (9 sources)
-   - Section Complémentaires (3 sources)
+6. **Références Bibliographiques** (60 sources MINIMUM)
+   - Section Sources Institutionnelles Françaises (20 sources)
+   - Section Sources Institutionnelles Européennes/Internationales (22 sources)
+   - Section Cabinets de Conseil (18 sources)
+   - Format APA obligatoire: Auteur. (Année). Titre. Publication. URL
 
 ## IMPÉRATIFS QUALITÉ :
 - MINIMUM 60 sources organisées par catégorie
@@ -325,11 +330,10 @@ Génère maintenant ce rapport exhaustif :""",
 - Utilise recherche web Perplexity exhaustive
 - MINIMUM 60 sources organisées par catégorie
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) :
-- 36 sources institutionnelles (60%) : Gartner, IDC, Forrester, organismes tech officiels
-- 12 sources académiques (20%) : McKinsey Digital, BCG Digital Ventures, whitepapers recherche
-- 9 sources média tech (15%) : TechCrunch, Wired, MIT Tech Review, ZDNet
-- 3 sources complémentaires (5%)
+## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles/analystes (70%) : Gartner, IDC, Forrester, Commission européenne, OCDE
+- 18 sources cabinets de conseil (30%) : McKinsey Digital, BCG Digital Ventures, Accenture, Deloitte
+- AUCUNE source média tech (TechCrunch, Wired, ZDNet, etc.) - STRICTEMENT INTERDIT
 
 ## IMPÉRATIFS :
 - 50+ données chiffrées avec sources croisées
@@ -350,11 +354,10 @@ Génère maintenant ce rapport exhaustif :""",
 - Utilise recherche web Perplexity exhaustive
 - MINIMUM 60 sources organisées par catégorie
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) :
-- 36 sources institutionnelles (60%) : INSEE, FEVAD, LSA, CREDOC, observatoires secteur
-- 12 sources académiques (20%) : McKinsey Retail, BCG Consumer, études spécialisées
-- 9 sources média commerce (15%) : LSA, e-commerce mag, Retail Dive
-- 3 sources complémentaires (5%)
+## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles (70%) : INSEE, FEVAD, CREDOC, Eurostat, Commission européenne, OCDE
+- 18 sources cabinets de conseil (30%) : McKinsey Retail, BCG Consumer, Bain, Deloitte, PwC
+- AUCUNE source média commerce (LSA, e-commerce mag, etc.) - STRICTEMENT INTERDIT
 
 ## IMPÉRATIFS :
 - 50+ données chiffrées avec sources croisées
@@ -379,9 +382,10 @@ Génère maintenant ce rapport exhaustif :"""
 
 Génère un rapport stratégique professionnel ultra-détaillé (6000-8000 mots) avec :
 
-## EXIGENCES SOURCES (TOUS RAPPORTS) :
-- MINIMUM 40-60 sources variées et approfondies
-- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+## EXIGENCES SOURCES (TOUS RAPPORTS) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- MINIMUM 40-60 sources institutionnelles et cabinets de conseil
+- Répartition: 70% institutionnelles (INSEE, BCE, OCDE, etc.), 30% cabinets (McKinsey, BCG, etc.)
+- AUCUNE source média, presse, blog - STRICTEMENT INTERDIT
 - Utilise recherche web Perplexity exhaustive pour données actuelles
 
 ## Structure Obligatoire avec Numérotation Hiérarchique
@@ -424,7 +428,7 @@ EXEMPLE DE STRUCTURE:
 
 Le marché bancaire français représente aujourd'hui un écosystème dynamique en pleine transformation (INSEE, 2024). L'analyse des données récentes révèle une croissance soutenue portée par la digitalisation et l'évolution des comportements clients (Banque de France, 2024).
 
-L'analyse détaillée révèle plusieurs tendances structurantes qui redéfinissent le paysage concurrentiel. Les néobanques captent désormais 8% du marché des particuliers, une progression de +45% en deux ans (ACPR, 2024). Cette dynamique s'accompagne d'une consolidation du secteur traditionnel, où les cinq premières banques concentrent 65% des parts de marché (FBF, 2024).
+L'analyse détaillée révèle plusieurs tendances structurantes qui redéfinissent le paysage concurrentiel. Les néobanques captent désormais 8% du marché des particuliers, une progression de +45% en deux ans (ACPR, 2024). Cette dynamique s'accompagne d'une consolidation du secteur traditionnel, où les cinq premières banques concentrent 65% des parts de marché (BCE, 2024).
 
 Ces évolutions s'accompagnent de transformations profondes des modèles économiques. L'investissement technologique représente désormais 12-15% des budgets, contre 6-8% il y a cinq ans (McKinsey, 2024). Les établissements pionniers observent une amélioration de leur ratio coût/revenu de 5-8 points (BCG, 2024).
 
@@ -432,9 +436,9 @@ Ces évolutions s'accompagnent de transformations profondes des modèles économ
 - Taille: 450 Md€ de revenus (INSEE, 2024)
 - Croissance: +3.2% CAGR 2021-2024 (Banque de France, 2024)
 - Parts de marché: Top 5 = 65% (ACPR, 2024)
-- Marge nette moyenne: 28% (FBF, 2024)
+- Marge nette moyenne: 28% (BCE, 2024)
 
-En synthèse, le marché démontre une résilience notable face aux disruptions technologiques. Les acteurs qui réussissent combinent solidité financière historique et agilité numérique, avec des investissements tech atteignant 450-600M€ par an pour les leaders (Les Échos, 2024).
+En synthèse, le marché démontre une résilience notable face aux disruptions technologiques. Les acteurs qui réussissent combinent solidité financière historique et agilité numérique, avec des investissements tech atteignant 450-600M€ par an pour les leaders (McKinsey, 2024).
 
 1. **Executive Summary** (500-700 mots)
    - Synthèse quantifiée : 5-8 KPIs clés avec sources APA (Auteur, Année)
@@ -471,8 +475,10 @@ En synthèse, le marché démontre une résilience notable face aux disruptions 
    - Tableau de synthèse comparatif des 3 scénarios
    - Analyse de sensibilité sur 2-3 variables clés
 
-6. **Sources Bibliographiques Organisées** (40-60 sources MINIMUM)
-   - Catégorisées : Institutionnelles / Études / Presse / Réglementaires
+6. **Références Bibliographiques** (40-60 sources MINIMUM)
+   - Sources Institutionnelles (70%) : INSEE, BCE, Banque de France, ACPR, AMF, OCDE, FMI
+   - Cabinets de Conseil (30%) : McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG
+   - Format APA obligatoire: Auteur. (Année). Titre. Publication. URL
 
 ## Impératifs qualité STRICTS
 
@@ -522,9 +528,10 @@ Génère maintenant ce rapport ultra-documenté et précis :""",
 
 **FORMAT** : Rapport stratégique professionnel (6000-8000 mots) avec :
 
-## EXIGENCES SOURCES (TOUS RAPPORTS) :
-- MINIMUM 40-60 sources variées et approfondies
-- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+## EXIGENCES SOURCES - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- MINIMUM 40-60 sources institutionnelles et cabinets de conseil
+- Répartition: 70% analystes/institutions (Gartner, IDC, Forrester, Commission EU), 30% cabinets (McKinsey, BCG, Accenture)
+- AUCUNE source média tech (TechCrunch, Wired, ZDNet, etc.) - STRICTEMENT INTERDIT
 - Utilise recherche web Perplexity exhaustive pour données actuelles
 
 ## Structure Obligatoire avec Numérotation Hiérarchique
@@ -608,7 +615,10 @@ En conclusion, la transformation digitale n'est plus une option mais un impérat
    - KPIs de suivi avec targets chiffrés
    - Analyse de sensibilité
 
-6. **Sources** (40-60 sources tech récentes)
+6. **Références Bibliographiques** (40-60 sources MINIMUM)
+   - Sources Analystes/Institutions (70%) : Gartner, IDC, Forrester, Commission européenne, OCDE
+   - Cabinets de Conseil (30%) : McKinsey, BCG, Accenture, Deloitte, PwC
+   - Format APA obligatoire: Auteur. (Année). Titre. Publication. URL
 
 EXIGENCES: MINIMUM 25 données chiffrées, 3+ tableaux, croisement sources format APA (Auteur, Année)
 
@@ -622,9 +632,10 @@ Génère maintenant ce rapport :""",
 
 **FORMAT** : Rapport stratégique professionnel (6000-8000 mots) avec :
 
-## EXIGENCES SOURCES (TOUS RAPPORTS) :
-- MINIMUM 40-60 sources variées et approfondies
-- Répartition: 60% institutionnelles, 20% académiques, 15% média réputé, 5% autres
+## EXIGENCES SOURCES - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- MINIMUM 40-60 sources institutionnelles et cabinets de conseil
+- Répartition: 70% institutionnelles (INSEE, FEVAD, CREDOC, Eurostat), 30% cabinets (McKinsey, BCG, Bain)
+- AUCUNE source média commerce (LSA, e-commerce mag, etc.) - STRICTEMENT INTERDIT
 - Utilise recherche web Perplexity exhaustive pour données actuelles
 
 ## Structure Obligatoire avec Numérotation Hiérarchique
@@ -665,19 +676,19 @@ EXIGENCES DE RÉDACTION:
 EXEMPLE DE STRUCTURE:
 ### 2.1 Évolution Comportements Consommateurs
 
-Le paysage de la consommation française connaît une mutation profonde accélérée par le digital (FEVAD, 2024). Les comportements d'achat se fragmentent entre canaux physiques et digitaux, créant de nouveaux parcours clients hybrides qui défient les modèles traditionnels (Nielsen, 2024).
+Le paysage de la consommation française connaît une mutation profonde accélérée par le digital (FEVAD, 2024). Les comportements d'achat se fragmentent entre canaux physiques et digitaux, créant de nouveaux parcours clients hybrides qui défient les modèles traditionnels (INSEE, 2024).
 
-L'e-commerce poursuit sa croissance soutenue avec un taux de pénétration atteignant 15.2% du commerce de détail total en 2024, contre 13.4% en 2023 (FEVAD, 2024). Cette progression s'accompagne d'une sophistication des attentes : livraison express, personnalisation de l'offre, expérience omnicanale fluide (Kantar, 2024). Les retailers qui excellent sur ces dimensions capturent 25-30% de parts de marché supplémentaires (McKinsey, 2024).
+L'e-commerce poursuit sa croissance soutenue avec un taux de pénétration atteignant 15.2% du commerce de détail total en 2024, contre 13.4% en 2023 (FEVAD, 2024). Cette progression s'accompagne d'une sophistication des attentes : livraison express, personnalisation de l'offre, expérience omnicanale fluide (McKinsey, 2024). Les retailers qui excellent sur ces dimensions capturent 25-30% de parts de marché supplémentaires (BCG, 2024).
 
-La dynamique retail s'oriente vers des modèles phygitaux intégrant le meilleur des deux mondes. Les magasins physiques évoluent en showrooms expérientiels avec click & collect, essayage virtuel, et conseillers augmentés par l'IA (LSA, 2024). Les investissements dans ces technologies atteignent 8-12% des budgets marketing des leaders, générant une hausse de trafic de 15-20% (Retail Detail, 2024).
+La dynamique retail s'oriente vers des modèles phygitaux intégrant le meilleur des deux mondes. Les magasins physiques évoluent en showrooms expérientiels avec click & collect, essayage virtuel, et conseillers augmentés par l'IA (Bain, 2024). Les investissements dans ces technologies atteignent 8-12% des budgets marketing des leaders, générant une hausse de trafic de 15-20% (Deloitte, 2024).
 
 **Indicateurs clés e-commerce:**
 - CA e-commerce France: 156 Md€ (+11% vs 2023) (FEVAD, 2024)
-- Taux pénétration: 15.2% du retail total (FEVAD, 2024)
-- Panier moyen: 68€ (+3€ vs 2023) (Nielsen, 2024)
-- Livraison J+1: 78% des sites top 100 (Kantar, 2024)
+- Taux pénétration: 15.2% du retail total (INSEE, 2024)
+- Panier moyen: 68€ (+3€ vs 2023) (CREDOC, 2024)
+- Livraison J+1: 78% des sites top 100 (McKinsey, 2024)
 
-En synthèse, le retail français bascule vers des modèles hybrides où l'excellence opérationnelle digitale devient aussi critique que la présence physique. Les enseignes gagnantes investissent 150-250M€ dans leur transformation omnicanale (Les Échos, 2024).
+En synthèse, le retail français bascule vers des modèles hybrides où l'excellence opérationnelle digitale devient aussi critique que la présence physique. Les enseignes gagnantes investissent 150-250M€ dans leur transformation omnicanale (BCG, 2024).
 
 1. **Synthèse Retail Quantifiée** (500-700 mots)
    - Tendances marché avec chiffres clés [sources croisées]
@@ -709,7 +720,10 @@ En synthèse, le retail français bascule vers des modèles hybrides où l'excel
    - Analyse de sensibilité prix/volume
    - KPIs de suivi omnicanal
 
-6. **Sources** (40-60 sources retail/e-commerce)
+6. **Références Bibliographiques** (40-60 sources MINIMUM)
+   - Sources Institutionnelles (70%) : INSEE, FEVAD, CREDOC, Eurostat, Commission européenne
+   - Cabinets de Conseil (30%) : McKinsey, BCG, Bain, Deloitte, PwC
+   - Format APA obligatoire: Auteur. (Année). Titre. Publication. URL
 
 EXIGENCES: MINIMUM 25 données chiffrées, 3+ tableaux, sources format APA (Auteur, Année)
 
@@ -741,13 +755,13 @@ def call_perplexity_safe(
         max_tokens_config = {
             "sonar": 8000,        # +2000 pour chat enrichi avec paragraphes
             "sonar-pro": 16000,   # +4000 pour rapports détaillés avec contenu narratif
-            "sonar-reasoning": 20000  # +4000 pour analyses profondes
+            "sonar-reasoning-pro": 20000  # +4000 pour analyses profondes (migration depuis sonar-reasoning)
         }
         max_tokens = max_tokens_config.get(selected_model, 6000)
         
         logger.info(f"Using model: {selected_model} for task: {task_type} (max_tokens: {max_tokens})")
         
-        # System prompt générique avec sources fiables et citations APA strictes
+        # System prompt générique avec sources institutionnelles et cabinets conseil uniquement
         system_prompt = f"""Tu es un consultant senior spécialisé en stratégie d'entreprise.
 
 {TRUSTED_SOURCES_INSTRUCTION}
@@ -762,25 +776,28 @@ RÈGLES OBLIGATOIRES:
 2. CITATIONS APA STRICTES:
    - CHAQUE fait/chiffre DOIT être suivi d'une citation: (Auteur, Année)
    - Exemple: "Le marché croît de 15% (INSEE, 2024)"
-   - Pour données importantes: citer 2-3 sources: (INSEE, 2024; Banque de France, 2024)
+   - Pour données importantes: citer 2-3 sources: (INSEE, 2024; BCE, 2024)
    - JAMAIS de chiffre sans source
 
 3. SECTION SOURCES OBLIGATOIRE EN FIN DE RAPPORT:
    TERMINE TOUJOURS par cette section exacte:
 
-   ## 📚 Sources
+   ## 📚 Références Bibliographiques
    
+   ### Sources Institutionnelles
    1. INSEE. (2024). Titre du rapport. Rapport officiel. https://insee.fr/...
    2. Banque de France. (2024). Titre. Publication. https://banque-france.fr/...
-   3. McKinsey. (2024). Titre étude. Rapport. https://mckinsey.com/...
+   3. BCE. (2024). Titre. Rapport. https://ecb.europa.eu/...
+   
+   ### Cabinets de Conseil
+   4. McKinsey & Company. (2024). Titre étude. Rapport. https://mckinsey.com/...
+   5. BCG. (2024). Titre. Étude. https://bcg.com/...
    [Continue avec TOUTES les sources utilisées - minimum 20 sources]
 
-4. QUALITÉ DES SOURCES:
-   - 60% institutionnelles (INSEE, ministères, autorités)
-   - 20% académiques (McKinsey, BCG, think tanks)
-   - 15% média réputé (Les Échos, Bloomberg, FT)
-   - 5% autres vérifiées
-   - ÉVITER: blogs, forums, sites non professionnels
+4. SOURCES AUTORISÉES EXCLUSIVEMENT:
+   - 70% institutionnelles (INSEE, BCE, Banque de France, ACPR, AMF, OCDE, FMI, ministères)
+   - 30% cabinets de conseil (McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG, Gartner, IDC)
+   - EXCLURE: médias, presse, blogs, forums, entreprises privées
 
 5. STYLE: Professionnel, générique, sans mention de secteur spécifique."""
         
@@ -789,39 +806,38 @@ RÈGLES OBLIGATOIRES:
 
 ═══════════════════════════════════════════════════════════════
 
-INSTRUCTIONS DE RECHERCHE APPROFONDIE ET MULTI-SOURCES :
+INSTRUCTIONS DE RECHERCHE - SOURCES INSTITUTIONNELLES ET CABINETS DE CONSEIL UNIQUEMENT :
 
-📌 PHASE 1 - RECHERCHE STRUCTURÉE EN 3 PHASES (40-60 sources pour TOUS les rapports) :
+📌 PHASE 1 - RECHERCHE STRUCTURÉE (sources autorisées exclusivement) :
 
-PHASE 1A - Sources Institutionnelles (priorité absolue) :
-- INSEE, Banque de France, ACPR, AMF, ministères français
-- Autorités européennes : BCE, EBA, ESMA, Commission européenne
+PHASE 1A - Sources Institutionnelles (70% minimum) :
+- France : INSEE, Banque de France, ACPR, AMF, DARES, DGE, France Stratégie, Cour des Comptes
+- Europe : BCE, EBA, ESMA, Commission européenne, Eurostat, Parlement européen
+- International : OCDE, FMI, BRI (Banque des Règlements Internationaux), Banque Mondiale
 - Organismes publics spécialisés (.gov, .gouv.fr, .europa.eu)
-- Données officielles, statistiques nationales, rapports publics
 
-PHASE 1B - Sources Académiques et Études :
-- Cabinets conseil : McKinsey, BCG, Bain, Deloitte, EY, PwC
-- Think tanks économiques : OFCE, Bruegel, CEPII, France Stratégie
-- Études sectorielles professionnelles (Gartner, IDC, Forrester pour tech)
-- Whitepapers recherche et rapports d'analystes
+PHASE 1B - Cabinets de Conseil (30% maximum) :
+- Stratégie : McKinsey & Company, Boston Consulting Group (BCG), Bain & Company
+- Audit/Conseil : Deloitte, PwC, EY (Ernst & Young), KPMG
+- Spécialisés : Accenture, Oliver Wyman, Roland Berger, AT Kearney, L.E.K. Consulting
+- Tech/Digital : Gartner, IDC, Forrester (uniquement pour analyses technologiques)
 
-PHASE 1C - Média Réputé et Complémentaires :
-- Média économique réputé : Les Échos, Financial Times, Bloomberg, Reuters, La Tribune
-- Presse spécialisée sectorielle vérifiée
-- Sources complémentaires vérifiées et pertinentes
-- Éviter absolument : blogs personnels, forums, sites non vérifiés
+⛔ SOURCES STRICTEMENT EXCLUES :
+- Médias et presse (Les Échos, Bloomberg, Financial Times, Reuters, etc.)
+- Blogs, forums et réseaux sociaux
+- Entreprises privées (hors cabinets de conseil listés)
+- Sites d'actualité et magazines
+- Think tanks non gouvernementaux
+- Contenus promotionnels ou commerciaux
 
 HIÉRARCHIE FINALE À RESPECTER :
-✓ 60% sources institutionnelles (priorité absolue)
-✓ 20% sources académiques et études
-✓ 15% média économique réputé
-✓ 5% autres vérifiées
+✓ 70% sources institutionnelles (priorité absolue)
+✓ 30% cabinets de conseil uniquement
 
 Pour TOUS les rapports (40-60 sources) : 
-- Minimum 24-36 sources institutionnelles (60%)
-- Minimum 8-12 sources académiques (20%)
-- Minimum 6-9 sources média réputé (15%)
-- Minimum 2-3 sources autres vérifiées (5%)
+- Minimum 28-42 sources institutionnelles (70%)
+- Maximum 12-18 sources cabinets de conseil (30%)
+- AUCUNE source média, presse ou blog
 
 📌 PHASE 2 - CROISEMENT ET VALIDATION DES SOURCES :
 - COMPARER systématiquement les chiffres entre sources avec citations APA :
@@ -846,23 +862,26 @@ Pour TOUS les rapports (40-60 sources) :
 📌 PHASE 5 - BIBLIOGRAPHIE APA COMPLÈTE ET ORGANISÉE :
 Section "## 📚 Références Bibliographiques" structurée par catégorie :
 
-### Sources Institutionnelles et Statistiques
+### Sources Institutionnelles Françaises
 INSEE. (2024). Panorama économique français Q3 2024. Rapport trimestriel. https://...
 Banque de France. (2024). Situation économique France. Bulletin mensuel. https://...
+ACPR. (2024). Rapport annuel supervision bancaire. Publication officielle. https://...
 
-### Études et Rapports Sectoriels
-McKinsey & Company. (2024). Transformation bancaire en France. Rapport annuel. https://...
+### Sources Institutionnelles Européennes et Internationales
+BCE. (2024). Rapport stabilité financière. Publication officielle. https://...
+OCDE. (2024). Perspectives économiques. Rapport annuel. https://...
+FMI. (2024). World Economic Outlook. Publication. https://...
 
-### Presse Économique Spécialisée
-Les Échos. (2024, 15 octobre). L'évolution du secteur bancaire. Article de presse. https://...
-
-### Sources Réglementaires
-ACPR. (2024). Directive consolidation bancaire. Texte officiel. https://...
+### Cabinets de Conseil - Études et Rapports
+McKinsey & Company. (2024). Transformation sectorielle en France. Rapport. https://...
+BCG. (2024). Analyse stratégique du marché. Étude. https://...
+Deloitte. (2024). Tendances et perspectives. Rapport annuel. https://...
 
 MINIMUM REQUIS (TOUS RAPPORTS):
-- 40-60 sources variées et approfondies
-- Répartition stricte: 60% institutionnelles, 20% académiques, 15% média, 5% autres
-- 24-36 sources instit. + 8-12 académiques + 6-9 média + 2-3 autres
+- 40-60 sources institutionnelles et cabinets de conseil uniquement
+- Répartition stricte: 70% institutionnelles, 30% cabinets de conseil
+- 28-42 sources institutionnelles + 12-18 sources cabinets conseil
+- AUCUNE source média, presse, blog ou entreprise privée
 
 📌 STRUCTURE ET NUMÉROTATION:
 - TOUS les titres doivent être numérotés hiérarchiquement
@@ -1122,6 +1141,36 @@ async def business_analysis(request: BusinessAnalysisRequest):
         request.title
     )
 
+@app.post("/analyze", response_model=AnalysisResponse)
+async def analyze(request: SchedulerAnalysisRequest):
+    """
+    Endpoint pour le scheduler-service - Compatible avec le format des veilles automatiques
+    Accepte: query, analysis_type, sector, deep_analysis
+    """
+    try:
+        # Mapper sector vers business_type si nécessaire
+        business_type = request.sector if request.sector else "general"
+        
+        # Si deep_analysis est True, s'assurer que analysis_type contient "approfondi"
+        analysis_type = request.analysis_type
+        if request.deep_analysis and "approfondi" not in analysis_type.lower():
+            analysis_type = f"{analysis_type}_approfondie"
+        
+        # Générer le titre automatiquement
+        title = f"Veille Automatisée - {analysis_type.replace('_', ' ').title()}"
+        
+        logger.info(f"Scheduler analysis request: {business_type}/{analysis_type} (deep: {request.deep_analysis})")
+        
+        return await generate_business_analysis_safe(
+            business_type=business_type,
+            analysis_type=analysis_type,
+            query=request.query,
+            title=title
+        )
+    except Exception as e:
+        logger.error(f"Error in /analyze endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/extended-analysis/stream")
 async def extended_analysis_stream(request: BusinessAnalysisRequest):
     """Génère rapports avec streaming SSE et barre de progression en temps réel"""
@@ -1355,6 +1404,91 @@ async def test_perplexity():
         
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.get("/check-api-status")
+async def check_api_status():
+    """Vérifie le statut de la clé API Perplexity et détecte les erreurs de quota"""
+    try:
+        if not PERPLEXITY_API_KEY:
+            return {
+                "status": "error",
+                "message": "PERPLEXITY_API_KEY not configured",
+                "api_key_configured": False
+            }
+        
+        client = OpenAI(
+            api_key=PERPLEXITY_API_KEY,
+            base_url=PERPLEXITY_BASE_URL,
+            timeout=30.0
+        )
+        
+        # Test avec le modèle chat (le moins coûteux)
+        test_model = get_model_for_task("chat")
+        
+        try:
+            response = client.chat.completions.create(
+                model=test_model,
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=10
+            )
+            
+            # Si on arrive ici, la clé fonctionne
+            return {
+                "status": "success",
+                "api_key_configured": True,
+                "api_key_valid": True,
+                "test_model": test_model,
+                "message": "✅ Clé API valide et fonctionnelle",
+                "note": "Pour vérifier votre quota exact, consultez https://www.perplexity.ai/settings/api"
+            }
+            
+        except Exception as api_error:
+            error_str = str(api_error).lower()
+            
+            # Détection des erreurs courantes
+            if "401" in error_str or "unauthorized" in error_str:
+                return {
+                    "status": "error",
+                    "api_key_configured": True,
+                    "api_key_valid": False,
+                    "error_type": "unauthorized",
+                    "message": "❌ Clé API invalide ou expirée",
+                    "suggestion": "Vérifiez votre clé sur https://www.perplexity.ai/settings/api"
+                }
+            elif "429" in error_str or "rate limit" in error_str or "quota" in error_str:
+                return {
+                    "status": "error",
+                    "api_key_configured": True,
+                    "api_key_valid": True,
+                    "error_type": "quota_exceeded",
+                    "message": "⚠️ Quota dépassé ou limite de taux atteinte",
+                    "suggestion": "Consultez votre quota sur https://www.perplexity.ai/settings/api et ajoutez des crédits si nécessaire"
+                }
+            elif "404" in error_str or "not found" in error_str:
+                return {
+                    "status": "error",
+                    "api_key_configured": True,
+                    "api_key_valid": True,
+                    "error_type": "model_not_found",
+                    "message": f"❌ Modèle '{test_model}' non trouvé",
+                    "suggestion": "Vérifiez que le modèle est disponible avec votre plan sur https://www.perplexity.ai/settings/api"
+                }
+            else:
+                return {
+                    "status": "error",
+                    "api_key_configured": True,
+                    "api_key_valid": None,
+                    "error_type": "unknown",
+                    "message": f"❌ Erreur API: {str(api_error)[:200]}",
+                    "suggestion": "Consultez https://www.perplexity.ai/settings/api pour vérifier votre compte"
+                }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "api_key_configured": bool(PERPLEXITY_API_KEY)
+        }
 
 @app.get("/diagnostics")
 async def diagnostics():
