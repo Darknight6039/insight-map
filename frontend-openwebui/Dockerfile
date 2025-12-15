@@ -9,6 +9,18 @@ RUN npm ci --only=production
 # Copy app source
 COPY . .
 
+# Build args for Next.js public environment variables
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:8006
+ARG NEXT_PUBLIC_SCHEDULER_URL=http://localhost:8007
+ARG NEXT_PUBLIC_REPORT_URL=http://localhost:8004
+
+# Set as environment variables for build
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_SCHEDULER_URL=$NEXT_PUBLIC_SCHEDULER_URL
+ENV NEXT_PUBLIC_REPORT_URL=$NEXT_PUBLIC_REPORT_URL
+
 # Build the app
 RUN npm run build
 
