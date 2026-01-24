@@ -154,6 +154,17 @@ docs/_build/
 # PROJECT SPECIFIC
 # =============================================================================
 
+# Next.js build output
+.next/
+out/
+
+# SQL backups (sensitive data)
+*.sql
+backups/
+
+# Claude configuration
+.claude/
+
 # Large PDF files (keep only small examples)
 data/pdfs/*
 !data/pdfs/.gitkeep

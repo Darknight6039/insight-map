@@ -1,0 +1,204 @@
+_format_version: "2.1"
+_transform: true
+
+###
+### Consumers / Users
+###
+consumers:
+  - username: DASHBOARD
+  - username: anon
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzY4OTQ0NzkyLCJleHAiOjIwODQzMDQ3OTJ9.Envmct_vtN0LNkk8TCCJjQe39dSYGpSoKS1aezsZL_M
+  - username: service_role
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3Njg5NDQ3OTIsImV4cCI6MjA4NDMwNDc5Mn0.K2nuv_C1gsmAGbFQ5IaK2-7bn3HGuayPUvPuhPKzPSw
+
+###
+### Access Control Lists
+###
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+###
+### Dashboard credentials
+###
+basicauth_credentials:
+  - consumer: DASHBOARD
+    username: ${DASHBOARD_USERNAME:-supabase}
+    password: ${DASHBOARD_PASSWORD:-this_password_is_insecure_and_should_be_updated}
+
+###
+### API Routes
+###
+services:
+  ## Open Auth routes (no key-auth required)
+  - name: auth-v1-open
+    url: http://supabase-auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+  - name: auth-v1-open-callback
+    url: http://supabase-auth:9999/callback
+    routes:
+      - name: auth-v1-open-callback
+        strip_path: true
+        paths:
+          - /auth/v1/callback
+    plugins:
+      - name: cors
+  - name: auth-v1-open-authorize
+    url: http://supabase-auth:9999/authorize
+    routes:
+      - name: auth-v1-open-authorize
+        strip_path: true
+        paths:
+          - /auth/v1/authorize
+    plugins:
+      - name: cors
+  
+  # Open token endpoint for login (no key-auth)
+  - name: auth-v1-open-token
+    url: http://supabase-auth:9999/token
+    routes:
+      - name: auth-v1-open-token
+        strip_path: true
+        paths:
+          - /auth/v1/token
+    plugins:
+      - name: cors
+
+  # Open signup endpoint (no key-auth) 
+  - name: auth-v1-open-signup
+    url: http://supabase-auth:9999/signup
+    routes:
+      - name: auth-v1-open-signup
+        strip_path: true
+        paths:
+          - /auth/v1/signup
+    plugins:
+      - name: cors
+
+  ## Secured Auth routes
+  - name: auth-v1
+    _comment: "GoTrue: /auth/v1/* -> http://supabase-auth:9999/*"
+    url: http://supabase-auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Secured REST routes
+  - name: rest-v1
+    _comment: "PostgREST: /rest/v1/* -> http://supabase-rest:3000/*"
+    url: http://supabase-rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Secured Realtime routes
+  - name: realtime-v1
+    _comment: "Realtime: /realtime/v1/* -> ws://supabase-realtime:4000/socket/*"
+    url: http://supabase-realtime:4000/socket
+    routes:
+      - name: realtime-v1-all
+        strip_path: true
+        paths:
+          - /realtime/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Storage routes
+  - name: storage-v1
+    _comment: "Storage: /storage/v1/* -> http://supabase-storage:5000/*"
+    url: http://supabase-storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Secured Database routes
+  - name: meta
+    _comment: "pg-meta: /pg/* -> http://supabase-meta:8080/*"
+    url: http://supabase-meta:8080/
+    routes:
+      - name: meta-all
+        strip_path: true
+        paths:
+          - /pg/
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+
+  ## Protected Dashboard
+  - name: dashboard
+    _comment: "Studio: /* -> http://supabase-studio:3000/*"
+    url: http://supabase-studio:3000/
+    routes:
+      - name: dashboard-all
+        strip_path: true
+        paths:
+          - /
+    plugins:
+      - name: cors
+      - name: basic-auth
+        config:
+          hide_credentials: true

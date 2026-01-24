@@ -9,13 +9,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, AsyncGenerator
 import os
+import re
 import requests
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from loguru import logger
 from importlib import metadata
 from app.business_prompts import get_business_prompt, get_available_business_types, get_business_type_display_name, get_trusted_sources, TRUSTED_SOURCES_INSTRUCTION
+from app.language_detector import detect_query_language
+from app.context_manager import (
+    save_text_context, save_document_context, get_user_context,
+    get_user_context_info, delete_user_context, get_context_for_prompt,
+    extract_text_from_file
+)
+from app.rag_memory import (
+    add_conversation, get_history_for_prompt, get_full_history,
+    clear_user_memory, search_history
+)
+from app.app_knowledge import build_context_prompt, ANALYSIS_TYPES, SECTORS, WATCH_FREQUENCIES, GUIDES, FAQ
+from app.assistant_actions import (
+    ActionType, ProposedAction, ActionResult, execute_action,
+    build_action_from_intent, ACTION_DEFINITIONS
+)
 
 # Import SDK Perplexity (compatible OpenAI SDK)
 try:
@@ -28,9 +44,10 @@ except ImportError:
 app = FastAPI(title="Backend Intelligence Service", description="Rapports longs cabinet de conseil - version robuste")
 
 # Configuration CORS
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://prometheus.axial-ia.fr").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -41,6 +58,7 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 VECTOR_SERVICE_URL = "http://vector-service:8002"
 DOCUMENT_SERVICE_URL = "http://document-service:8001"
+MEMORY_SERVICE_URL = os.getenv("MEMORY_SERVICE_URL", "http://memory-service:8008")
 
 # Configuration multi-modèles Sonar optimisée par cas d'usage
 # IMPORTANT: Tous les rapports (standards et approfondis) utilisent sonar-pro
@@ -63,6 +81,8 @@ class BusinessAnalysisRequest(BaseModel):
     analysis_type: str
     query: str
     title: Optional[str] = None
+    include_recommendations: Optional[bool] = True  # Option pour inclure/exclure les recommandations
+    language: Optional[str] = "fr"  # Langue de réponse: 'fr' ou 'en'
 
 class AnalysisResponse(BaseModel):
     analysis_type: str
@@ -116,6 +136,84 @@ def get_document_metadata(doc_id: int) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"Error fetching document metadata for doc_id={doc_id}: {e}")
         return None
+
+async def save_conversation_to_memory(
+    user_id: str,
+    query: str,
+    response: str,
+    conversation_type: str = "analysis",
+    analysis_type: Optional[str] = None,
+    business_type: Optional[str] = None
+):
+    """
+    Save conversation to memory service using internal endpoint (no JWT required)
+
+    user_id: Can be either an integer (as string) or UUID string from Supabase.
+             The memory-service will handle the conversion via user_id_mapping table.
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            result = await client.post(
+                f"{MEMORY_SERVICE_URL}/internal/conversations",
+                params={"user_id": str(user_id)},
+                json={
+                    "query": query,
+                    "response": response,
+                    "conversation_type": conversation_type,
+                    "analysis_type": analysis_type,
+                    "business_type": business_type
+                }
+            )
+            if result.status_code == 201:
+                logger.info(f"✅ Conversation saved to memory service for user {user_id}: {conversation_type}")
+            else:
+                logger.warning(f"⚠️ Memory service returned {result.status_code}: {result.text[:200]}")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to save to memory service (non-blocking): {e}")
+
+
+async def save_document_to_memory(
+    user_id: str,
+    document_type: str,
+    title: str,
+    content: Optional[str] = None,
+    file_path: Optional[str] = None,
+    analysis_type: Optional[str] = None,
+    business_type: Optional[str] = None,
+    report_id: Optional[int] = None,
+    watch_id: Optional[int] = None
+):
+    """
+    Save document to memory service using internal endpoint
+
+    user_id: Can be either an integer (as string) or UUID string from Supabase.
+             The memory-service will handle the conversion via user_id_mapping table.
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            result = await client.post(
+                f"{MEMORY_SERVICE_URL}/internal/documents",
+                json={
+                    "user_id": str(user_id),
+                    "document_type": document_type,
+                    "title": title[:500],
+                    "content": (content or "")[:5000],
+                    "file_path": file_path or "",
+                    "analysis_type": analysis_type or "",
+                    "business_type": business_type or "",
+                    "report_id": report_id or 0,
+                    "watch_id": watch_id or 0,
+                    "metadata": {}
+                }
+            )
+            if result.status_code in (200, 201):
+                logger.info(f"✅ Document saved to memory service for user {str(user_id)[:16]}...: {title[:50]}")
+            else:
+                logger.warning(f"Memory service returned {result.status_code}: {result.text}")
+    except Exception as e:
+        logger.warning(f"Failed to save document to memory service: {e}")
 
 def search_documents_safe(query: str, top_k: int = 10) -> List[Dict]:
     """Recherche vectorielle avec gestion d'erreurs robuste"""
@@ -245,29 +343,78 @@ def format_context_safe(documents: List[Dict]) -> str:
     
     return context
 
-def create_optimized_prompt(business_type: str, analysis_type: str, query: str, context: str) -> str:
-    """Crée prompts concis et efficaces pour rapports de cabinet de conseil avec sonar-pro"""
+def create_optimized_prompt(business_type: str, analysis_type: str, query: str, context: str, include_recommendations: bool = True, language: str = "fr", user_id: Optional[str] = None) -> str:
+    """Crée prompts concis et efficaces pour rapports de cabinet de conseil avec sonar-pro
     
-    # Détection rapport approfondi (60 sources)
-    if "approfondi" in analysis_type.lower():
+    Args:
+        business_type: Type de métier
+        analysis_type: Type d'analyse
+        query: Requête d'analyse
+        context: Contexte documentaire
+        include_recommendations: Si True, inclut les recommandations stratégiques
+        language: Langue de réponse ('fr' pour français, 'en' pour anglais)
+    """
+    
+    # Instruction de langue
+    language_instruction = ""
+    if language == "en":
+        language_instruction = """
+⚠️ **LANGUAGE INSTRUCTION - RESPOND IN ENGLISH**:
+The user query is in English. You MUST respond entirely in English.
+All sections, titles, content, and recommendations must be written in English.
+
+"""
+    else:
+        language_instruction = """
+⚠️ **INSTRUCTION DE LANGUE - RÉPONDRE EN FRANÇAIS**:
+La requête utilisateur est en français. Tu DOIS répondre entièrement en français.
+Toutes les sections, titres, contenus et recommandations doivent être rédigés en français.
+
+"""
+    
+    # Integration du contexte utilisateur et historique (RAG)
+    user_context_section = ""
+    user_history_section = ""
+    if user_id:
+        try:
+            user_context_section = get_context_for_prompt(user_id, max_length=2000)
+            user_history_section = get_history_for_prompt(user_id, query, max_length=800)
+        except Exception as e:
+            logger.warning(f"Error fetching user context/history: {e}")
+    
+    # Calcul des dates pour contrainte temporelle (dernière semaine)
+    date_fin = datetime.now().strftime("%d/%m/%Y")
+    date_debut = (datetime.now() - timedelta(days=7)).strftime("%d/%m/%Y")
+    time_constraint = f"""
+## CONTRAINTE TEMPORELLE OBLIGATOIRE
+IMPORTANT: Concentre tes recherches sur les sources publiees entre le {date_debut} et le {date_fin} (dernière semaine uniquement).
+Privilegie les actualites et donnees les plus recentes. Les sources plus anciennes ne doivent etre utilisees que pour le contexte historique.
+
+"""
+    
+    # Synthese Executive = Rapport exhaustif (60 sources) avec contrainte temporelle 1 semaine
+    if analysis_type.lower() == "synthese_executive":
         prompt_templates_deep = {
-            "finance_banque": f"""Tu es un consultant senior McKinsey spécialisé en stratégie bancaire - Rapport Approfondi.
+            "finance_banque": f"""Tu es un consultant senior McKinsey specialise en strategie bancaire - Synthese Executive.
+
+{time_constraint}
 
 **MISSION** : {query}
 
 **CONTEXTE DOCUMENTAIRE** :
 {context[:5000]}
 
-**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
+**FORMAT** : Rapport ultra-detaille (8000-10000 mots) avec 60 sources MINIMUM
 
-## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+## EXIGENCES SOURCES (SYNTHESE EXECUTIVE) :
 - Utilise recherche web Perplexity exhaustive
-- MINIMUM 60 sources organisées par catégorie
+- MINIMUM 60 sources organisees par categorie
+- FOCUS sur les actualites de la DERNIERE SEMAINE ({date_debut} - {date_fin})
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
-- 42 sources institutionnelles (70%) : INSEE, Banque de France, ACPR, AMF, ministères, BCE, EBA, OCDE, FMI
+## HIERARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles (70%) : INSEE, Banque de France, ACPR, AMF, ministeres, BCE, EBA, OCDE, FMI
 - 18 sources cabinets de conseil (30%) : McKinsey, BCG, Bain, Deloitte, PwC, EY, KPMG
-- AUCUNE source média (Les Échos, Bloomberg, FT, etc.) - STRICTEMENT INTERDIT
+- AUCUNE source media (Les Echos, Bloomberg, FT, etc.) - STRICTEMENT INTERDIT
 
 ## RECHERCHE EN 2 PHASES :
 Phase 1 : 42 sources institutionnelles minimum (70%)
@@ -276,98 +423,107 @@ Phase 2 : 18 sources cabinets de conseil maximum (30%)
 ## STRUCTURE RAPPORT EXHAUSTIF :
 
 1. **Executive Summary** (800-1000 mots)
-   - 8-10 KPIs clés avec 3-4 sources croisées chacun
+   - 8-10 KPIs cles avec 3-4 sources croisees chacun
    - Top 5 recommandations avec ROI, budget, timeline
 
 2. **Analyse Sectorielle Approfondie** (2500-3000 mots)
-   - Dimensionnement marché détaillé (10+ métriques)
-   - Segmentation complète avec données chiffrées
-   - Évolutions historiques 5 ans + projections 3 ans
-   - MINIMUM 25 données chiffrées avec sources croisées
+   - Dimensionnement marche detaille (10+ metriques)
+   - Segmentation complete avec donnees chiffrees
+   - Evolutions historiques 5 ans + projections 3 ans
+   - MINIMUM 25 donnees chiffrees avec sources croisees
 
 3. **Analyse Concurrentielle Exhaustive** (2000-2500 mots)
-   - Tableau comparatif 12+ critères × 8-10 acteurs
+   - Tableau comparatif 12+ criteres x 8-10 acteurs
    - Chaque cellule doit avoir sa source
-   - Analyse détaillée forces/faiblesses par acteur
-   - Cartographie positionnement stratégique
-   - MINIMUM 3 tableaux comparatifs détaillés
+   - Analyse detaillee forces/faiblesses par acteur
+   - Cartographie positionnement strategique
+   - MINIMUM 3 tableaux comparatifs detailles
 
-4. **Recommandations Stratégiques** (2000-2500 mots)
-   - 8-10 recommandations ultra-détaillées
+4. **Recommandations Strategiques** (2000-2500 mots)
+   - 8-10 recommandations ultra-detaillees
    - Chaque recommandation : budget, ROI, timeline, risques, KPIs
-   - Plans d'action opérationnels concrets
-   - Analyses coûts-bénéfices détaillées
+   - Plans d'action operationnels concrets
+   - Analyses couts-benefices detaillees
 
-5. **Projections et Scénarios** (1500-2000 mots)
-   - 3 scénarios modélisés (optimiste, central, pessimiste)
-   - Analyses de sensibilité sur 4-5 variables
-   - Tableaux financiers détaillés
+5. **Projections et Scenarios** (1500-2000 mots)
+   - 3 scenarios modelises (optimiste, central, pessimiste)
+   - Analyses de sensibilite sur 4-5 variables
+   - Tableaux financiers detailles
 
-6. **Références Bibliographiques** (60 sources MINIMUM)
-   - Section Sources Institutionnelles Françaises (20 sources)
-   - Section Sources Institutionnelles Européennes/Internationales (22 sources)
+6. **References Bibliographiques** (60 sources MINIMUM)
+   - Section Sources Institutionnelles Francaises (20 sources)
+   - Section Sources Institutionnelles Europeennes/Internationales (22 sources)
    - Section Cabinets de Conseil (18 sources)
-   - Format APA obligatoire: Auteur. (Année). Titre. Publication. URL
+   - Format APA obligatoire: Auteur. (Annee). Titre. Publication. URL
 
-## IMPÉRATIFS QUALITÉ :
-- MINIMUM 60 sources organisées par catégorie
-- MINIMUM 50 données chiffrées avec sources croisées
-- MINIMUM 5 tableaux comparatifs détaillés
-- Croisement 3-4 sources pour chaque donnée stratégique
+## IMPERATIFS QUALITE :
+- MINIMUM 60 sources organisees par categorie
+- MINIMUM 50 donnees chiffrees avec sources croisees
+- MINIMUM 5 tableaux comparatifs detailles
+- Croisement 3-4 sources pour chaque donnee strategique
 - Citations denses : chaque paragraphe doit avoir 3-5 citations minimum
 
-Génère maintenant ce rapport exhaustif :""",
+Genere maintenant ce rapport exhaustif :""",
 
-            "tech_digital": f"""Tu es un consultant BCG expert en transformation digitale - Rapport Approfondi.
+            "tech_digital": f"""Tu es un consultant BCG expert en transformation digitale - Synthese Executive.
+
+{time_constraint}
 
 **MISSION** : {query}
 
 **CONTEXTE** : {context[:5000]}
 
-**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
+**FORMAT** : Rapport ultra-detaille (8000-10000 mots) avec 60 sources MINIMUM
 
-## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+## EXIGENCES SOURCES (SYNTHESE EXECUTIVE) :
 - Utilise recherche web Perplexity exhaustive
-- MINIMUM 60 sources organisées par catégorie
+- MINIMUM 60 sources organisees par categorie
+- FOCUS sur les actualites de la DERNIERE SEMAINE ({date_debut} - {date_fin})
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
-- 42 sources institutionnelles/analystes (70%) : Gartner, IDC, Forrester, Commission européenne, OCDE
+## HIERARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles/analystes (70%) : Gartner, IDC, Forrester, Commission europeenne, OCDE
 - 18 sources cabinets de conseil (30%) : McKinsey Digital, BCG Digital Ventures, Accenture, Deloitte
-- AUCUNE source média tech (TechCrunch, Wired, ZDNet, etc.) - STRICTEMENT INTERDIT
+- AUCUNE source media tech (TechCrunch, Wired, ZDNet, etc.) - STRICTEMENT INTERDIT
 
-## IMPÉRATIFS :
-- 50+ données chiffrées avec sources croisées
-- 5+ tableaux comparatifs détaillés
+## IMPERATIFS :
+- 50+ donnees chiffrees avec sources croisees
+- 5+ tableaux comparatifs detailles
 - Rapport 8000-10000 mots
 
-Génère maintenant ce rapport exhaustif :""",
+Genere maintenant ce rapport exhaustif :""",
 
-            "retail_commerce": f"""Tu es un consultant Bain expert retail - Rapport Approfondi.
+            "retail_commerce": f"""Tu es un consultant Bain expert retail - Synthese Executive.
+
+{time_constraint}
 
 **MISSION** : {query}
 
 **CONTEXTE** : {context[:5000]}
 
-**FORMAT** : Rapport ultra-détaillé (8000-10000 mots) avec 60 sources MINIMUM
+**FORMAT** : Rapport ultra-detaille (8000-10000 mots) avec 60 sources MINIMUM
 
-## EXIGENCES SOURCES (RAPPORTS APPROFONDIS) :
+## EXIGENCES SOURCES (SYNTHESE EXECUTIVE) :
 - Utilise recherche web Perplexity exhaustive
-- MINIMUM 60 sources organisées par catégorie
+- MINIMUM 60 sources organisees par categorie
+- FOCUS sur les actualites de la DERNIERE SEMAINE ({date_debut} - {date_fin})
 
-## HIÉRARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
-- 42 sources institutionnelles (70%) : INSEE, FEVAD, CREDOC, Eurostat, Commission européenne, OCDE
+## HIERARCHIE SOURCES STRICTE (60 sources) - INSTITUTIONS ET CABINETS UNIQUEMENT :
+- 42 sources institutionnelles (70%) : INSEE, FEVAD, CREDOC, Eurostat, Commission europeenne, OCDE
 - 18 sources cabinets de conseil (30%) : McKinsey Retail, BCG Consumer, Bain, Deloitte, PwC
-- AUCUNE source média commerce (LSA, e-commerce mag, etc.) - STRICTEMENT INTERDIT
+- AUCUNE source media commerce (LSA, e-commerce mag, etc.) - STRICTEMENT INTERDIT
 
-## IMPÉRATIFS :
-- 50+ données chiffrées avec sources croisées
-- 5+ tableaux comparatifs détaillés
+## IMPERATIFS :
+- 50+ donnees chiffrees avec sources croisees
+- 5+ tableaux comparatifs detailles
 - Rapport 8000-10000 mots
 
-Génère maintenant ce rapport exhaustif :"""
+Genere maintenant ce rapport exhaustif :"""
         }
         
-        return prompt_templates_deep.get(business_type, prompt_templates_deep["finance_banque"])
+        deep_prompt = prompt_templates_deep.get(business_type, prompt_templates_deep["finance_banque"])
+        # Ajouter contexte utilisateur et historique si disponibles
+        full_prompt = language_instruction + user_context_section + user_history_section + deep_prompt
+        return full_prompt
     
     # Templates standards (40-60 sources) - code existant
     prompt_templates = {
@@ -730,7 +886,28 @@ EXIGENCES: MINIMUM 25 données chiffrées, 3+ tableaux, sources format APA (Aute
 Génère maintenant ce rapport :"""
     }
     
-    return prompt_templates.get(business_type, prompt_templates["finance_banque"])
+    base_prompt = prompt_templates.get(business_type, prompt_templates["finance_banque"])
+    
+    # Ajouter instruction de langue
+    # Ajouter contexte utilisateur et historique si disponibles
+    base_prompt = language_instruction + user_context_section + user_history_section + base_prompt
+    
+    # Si recommandations désactivées, ajouter instruction explicite
+    if not include_recommendations:
+        no_reco_instruction = """
+
+⚠️ **INSTRUCTION SPÉCIALE - SANS RECOMMANDATIONS**:
+Ce rapport doit être une analyse FACTUELLE UNIQUEMENT.
+- NE PAS inclure de section "Recommandations Stratégiques"
+- NE PAS inclure de section "Plan d'Action"
+- NE PAS inclure de conseils ou suggestions d'amélioration
+- Se concentrer UNIQUEMENT sur l'analyse, les données et les constats
+- Remplacer la section recommandations par une section "Conclusions et Points Clés" qui résume les faits sans préconisations
+
+"""
+        base_prompt = no_reco_instruction + base_prompt
+    
+    return base_prompt
 
 def call_perplexity_safe(
     prompt: str, 
@@ -956,8 +1133,8 @@ Réponds maintenant avec recherche approfondie et croisement systématique des s
         logger.error(f"Critical error in Perplexity call: {e}")
         return f"❌ **Erreur critique**\n\n{str(e)[:300]}"
 
-async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None) -> AnalysisResponse:
-    """Génère analyse avec gestion d'erreurs complète"""
+async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None, user_id: str = "1") -> AnalysisResponse:
+    """Génère analyse avec gestion d'erreurs complète + sauvegarde memory-service"""
     try:
         is_deep_analysis = "approfondi" in analysis_type.lower()
         logger.info(f"Starting analysis: {business_type}/{analysis_type} (Deep: {is_deep_analysis})")
@@ -972,9 +1149,11 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
         context = format_context_safe(documents)
         logger.info(f"✓ [2/5] Contexte formaté ({len(context)} caractères)")
         
-        # 3. Création prompt optimisé
+        # 3. Création prompt optimisé avec détection de langue
+        detected_language = detect_query_language(query)
+        logger.info(f"🌐 Langue détectée: {detected_language}")
         logger.info("🎯 [3/5] Création prompt optimisé...")
-        prompt = create_optimized_prompt(business_type, analysis_type, query, context)
+        prompt = create_optimized_prompt(business_type, analysis_type, query, context, include_recommendations=True, language=detected_language)
         expected_sources = "60 sources" if is_deep_analysis else "40-60 sources"
         logger.info(f"✓ [3/5] Prompt créé (type: {expected_sources})")
         
@@ -994,10 +1173,23 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
         enriched_sources = [enrich_source_with_apa(d, i+1) for i, d in enumerate(documents)]
         logger.info(f"✓ [5/5] Rapport finalisé avec {len(enriched_sources)} sources RAG")
         
+        final_title = title or f"Rapport {get_business_type_display_name(business_type)} - {analysis_type.replace('_', ' ').title()}"
+        
+        # 6. Sauvegarde dans memory-service (non-bloquant)
+        asyncio.create_task(save_conversation_to_memory(
+            user_id=user_id,
+            query=query,
+            response=content[:8000],  # Limit content size
+            conversation_type="analysis",
+            analysis_type=analysis_type,
+            business_type=business_type
+        ))
+        logger.info(f"📝 Sauvegarde async dans memory-service pour user {user_id}")
+        
         return AnalysisResponse(
             analysis_type=analysis_type,
             business_type=business_type,
-            title=title or f"Rapport {get_business_type_display_name(business_type)} - {analysis_type.replace('_', ' ').title()}",
+            title=final_title,
             content=content,
             sources=enriched_sources,
             metadata={
@@ -1009,7 +1201,8 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
                 "provider": "Perplexity AI",
                 "max_tokens": 8000,
                 "status": "success",
-                "citation_format": "APA"
+                "citation_format": "APA",
+                "saved_to_memory": True
             },
             timestamp=datetime.now().isoformat()
         )
@@ -1061,6 +1254,16 @@ Réponds maintenant de façon concise:"""
             task_type="chat"  # Force sonar pour chat court
         )
         
+        # 4. Sauvegarde dans memory-service (non-bloquant)
+        asyncio.create_task(save_conversation_to_memory(
+            user_id="1",  # Default user for MVP (string for UUID compatibility)
+            query=message,
+            response=response_content,
+            conversation_type="chat",
+            analysis_type=None,
+            business_type=business_type
+        ))
+        
         return ChatResponse(
             response=response_content,
             business_context=business_context,
@@ -1071,7 +1274,8 @@ Réponds maintenant de façon concise:"""
                 "documents_found": 0,  # RAG désactivé
                 "model": get_model_for_task("chat"),
                 "provider": "Perplexity AI",
-                "mode": "perplexity_web_only"
+                "mode": "perplexity_web_only",
+                "saved_to_memory": True
             },
             timestamp=datetime.now().isoformat()
         )
@@ -1199,12 +1403,20 @@ async def extended_analysis_stream(request: BusinessAnalysisRequest):
             await asyncio.sleep(0.3)
             
             # Étape 4: Création prompt (30%)
-            yield sse_msg(30, 'prompt', 'Construction de la requete...')
+            include_reco = request.include_recommendations if request.include_recommendations is not None else True
+            # Détection automatique de la langue de la query utilisateur
+            detected_language = detect_query_language(request.query)
+            logger.info(f"🌐 Langue détectée automatiquement: {detected_language} pour query: '{request.query[:50]}...'")
+            reco_status = "avec recommandations" if include_reco else "sans recommandations"
+            lang_status = "EN" if detected_language == "en" else "FR"
+            yield sse_msg(30, 'prompt', f'Construction de la requete ({reco_status}, {lang_status})...')
             prompt = create_optimized_prompt(
                 request.business_type or "general",
                 request.analysis_type,
                 request.query,
-                context
+                context,
+                include_recommendations=include_reco,
+                language=detected_language
             )
             await asyncio.sleep(0.3)
             
@@ -1571,6 +1783,505 @@ async def diagnostics():
         diagnostics_result["business_types"] = {"status": f"❌ Error: {str(e)[:100]}"}
     
     return diagnostics_result
+
+
+# =============================================================================
+# CONTEXT & MEMORY ENDPOINTS (RAG)
+# =============================================================================
+
+class TextContextRequest(BaseModel):
+    content: str
+
+@app.post("/context/text")
+async def save_context_text(request: TextContextRequest, user_id: str = "default_user"):
+    """Enregistre un contexte texte pour l'utilisateur"""
+    try:
+        result = save_text_context(user_id, request.content)
+        return {"status": "success", "context": result}
+    except Exception as e:
+        logger.error(f"Error saving text context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/context/upload")
+async def upload_context_document(user_id: str = "default_user"):
+    """
+    Upload un document de contexte (PDF, DOCX, TXT)
+    Note: En production, utiliser FastAPI UploadFile
+    """
+    # Placeholder - en production, recevoir le fichier via form-data
+    return {"status": "error", "message": "Upload endpoint requires multipart form data. Use gateway API."}
+
+
+@app.get("/context/current")
+async def get_current_context(user_id: str = "default_user"):
+    """Recupere les infos du contexte actuel de l'utilisateur"""
+    try:
+        context_info = get_user_context_info(user_id)
+        if context_info:
+            return context_info
+        return {"type": None, "message": "No context set"}
+    except Exception as e:
+        logger.error(f"Error getting context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/context")
+async def remove_context(user_id: str = "default_user"):
+    """Supprime le contexte de l'utilisateur"""
+    try:
+        success = delete_user_context(user_id)
+        return {"status": "success" if success else "not_found", "deleted": success}
+    except Exception as e:
+        logger.error(f"Error deleting context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/history")
+async def get_memory_history(user_id: str = "default_user", limit: int = 20):
+    """Recupere l'historique des conversations de l'utilisateur"""
+    try:
+        history = get_full_history(user_id, limit=limit)
+        return {"conversations": history, "count": len(history)}
+    except Exception as e:
+        logger.error(f"Error getting memory history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SearchMemoryRequest(BaseModel):
+    query: str
+    max_results: int = 10
+
+@app.post("/memory/search")
+async def search_memory(request: SearchMemoryRequest, user_id: str = "default_user"):
+    """Recherche dans l'historique des conversations"""
+    try:
+        results = search_history(user_id, request.query, max_results=request.max_results)
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        logger.error(f"Error searching memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/memory")
+async def clear_memory(user_id: str = "default_user"):
+    """Supprime l'historique des conversations de l'utilisateur"""
+    try:
+        success = clear_user_memory(user_id)
+        return {"status": "success" if success else "not_found", "cleared": success}
+    except Exception as e:
+        logger.error(f"Error clearing memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# ASSISTANT INTELLIGENT - Endpoints
+# =============================================================================
+
+class AssistantChatRequest(BaseModel):
+    message: str
+    user_id: Optional[str] = "default_user"
+    user_email: Optional[str] = None
+    conversation_history: Optional[List[Dict]] = []
+    current_page: Optional[str] = None  # Pour contexte: 'home', 'watches', 'profile'
+
+
+class AssistantChatResponse(BaseModel):
+    message: str
+
+
+def detect_intent_and_entities(message: str, conversation_history: List[Dict] = None) -> tuple:
+    """
+    Detecte l'intention de l'utilisateur et extrait les entites pertinentes.
+    Retourne (intent, entities)
+    """
+    # #region agent log H1
+    import re as _re_debug
+    _email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    _found_emails = _re_debug.findall(_email_pattern, message)
+    logger.info(f"[DEBUG-H1] Email extraction: message='{message[:100]}', found_emails={_found_emails}")
+    # #endregion
+    message_lower = message.lower()
+    entities = {}
+    
+    # Extraire les emails du message et les ajouter aux entites
+    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    found_emails = re.findall(email_pattern, message)
+    if found_emails:
+        entities["emails"] = found_emails
+    
+    # Detection des intentions d'action
+    if any(word in message_lower for word in ["creer", "créer", "nouvelle", "ajouter", "configurer"]):
+        if any(word in message_lower for word in ["veille", "surveillance", "watch"]):
+            intent = "create_watch"
+            # Extraction du sujet
+            for keyword in ["sur", "concernant", "à propos de", "about"]:
+                if keyword in message_lower:
+                    idx = message_lower.find(keyword) + len(keyword)
+                    topic = message[idx:].strip().split(",")[0].split(".")[0].strip()
+                    # Nettoyer le topic: retirer les emails et les mots cles d'envoi
+                    if topic:
+                        # Retirer les emails du topic
+                        for email in found_emails:
+                            topic = topic.replace(email, "").strip()
+                        # Retirer les patterns "a envoyer a", "envoye a", etc.
+                        topic = re.sub(r'\s*(a|à)\s*(envoyer|envoyé|envoyée)\s*(a|à)?\s*$', '', topic, flags=re.IGNORECASE).strip()
+                        if topic:
+                            entities["topic"] = topic
+            # Detection de la frequence
+            if "quotidien" in message_lower or "chaque jour" in message_lower:
+                entities["frequency"] = "daily"
+            elif "hebdomadaire" in message_lower or "chaque semaine" in message_lower:
+                entities["frequency"] = "weekly_monday"
+            elif "mensuel" in message_lower:
+                entities["frequency"] = "monthly"
+            return intent, entities
+        
+        if any(word in message_lower for word in ["rapport", "analyse", "report"]):
+            intent = "generate_report"
+            for keyword in ["sur", "concernant", "à propos de", "about"]:
+                if keyword in message_lower:
+                    idx = message_lower.find(keyword) + len(keyword)
+                    query = message[idx:].strip().split(",")[0].split(".")[0].strip()
+                    if query:
+                        entities["query"] = query
+            return intent, entities
+    
+    if any(word in message_lower for word in ["liste", "lister", "voir", "afficher", "montre", "quelles sont"]):
+        if any(word in message_lower for word in ["veille", "veilles", "surveillance", "watches"]):
+            return "list_watches", {}
+    
+    if any(word in message_lower for word in ["supprimer", "effacer", "retirer", "delete"]):
+        if any(word in message_lower for word in ["veille", "watch"]):
+            return "delete_watch", entities
+    
+    if any(word in message_lower for word in ["modifier", "changer", "mettre à jour", "update", "edit"]):
+        if any(word in message_lower for word in ["veille", "watch"]):
+            return "update_watch", entities
+    
+    # Detection des questions
+    if any(word in message_lower for word in ["comment", "qu'est-ce", "c'est quoi", "explique", "how", "what", "pourquoi"]):
+        return "explanation", entities
+    
+    # Detection de demande d'aide sur les fonctionnalites
+    if any(word in message_lower for word in ["aide", "help", "fonctionnalit", "feature", "peut faire", "capable"]):
+        return "explanation", entities
+    
+    # Par defaut: conversation generale
+    return "conversation", entities
+
+
+async def build_assistant_context(user_id: str, message: str) -> tuple:
+    """
+    Construit le contexte complet pour l'assistant:
+    - Connaissance de l'application
+    - Contexte RAG de l'utilisateur
+    - Historique des conversations
+    - Liste des veilles actuelles
+    
+    Retourne (context_prompt, sources_used)
+    """
+    sources_used = []
+    context_parts = []
+    
+    # 1. Connaissance de l'application
+    app_context = build_context_prompt()
+    context_parts.append(app_context)
+    sources_used.append("Documentation Prometheus")
+    
+    # 2. Contexte RAG de l'entreprise
+    try:
+        user_context = get_context_for_prompt(user_id)
+        if user_context and len(user_context) > 50:
+            context_parts.append(f"\n## Contexte de l'entreprise de l'utilisateur:\n{user_context[:2000]}")
+            sources_used.append("Contexte entreprise")
+    except Exception as e:
+        logger.warning(f"Could not load user context: {e}")
+    
+    # 3. Historique des conversations recentes
+    try:
+        history_context = get_history_for_prompt(user_id, message, max_length=1000)
+        if history_context and len(history_context) > 50:
+            context_parts.append(f"\n## Historique recent des conversations:\n{history_context[:1000]}")
+            sources_used.append("Historique conversations")
+    except Exception as e:
+        logger.warning(f"Could not load history: {e}")
+    
+    # 4. Liste des veilles actuelles (via API scheduler)
+    try:
+        import httpx
+        scheduler_url = os.getenv("SCHEDULER_URL", "http://scheduler-service:8007")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"Fetching watches from {scheduler_url}/watches")
+            response = await client.get(f"{scheduler_url}/watches")
+            logger.info(f"Watches response status: {response.status_code}")
+            if response.status_code == 200:
+                watches = response.json()
+                logger.info(f"Found {len(watches) if watches else 0} watches")
+                if watches:
+                    watches_info = "\n## Veilles configurees par l'utilisateur:\n"
+                    for w in watches[:10]:  # Max 10
+                        status = "Active" if w.get("is_active") else "Inactive"
+                        watches_info += f"- {w['name']} (ID: {w['id']}): {w['topic']} - {status}\n"
+                    context_parts.append(watches_info)
+                    sources_used.append("Veilles utilisateur")
+            else:
+                logger.warning(f"Failed to fetch watches: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error fetching watches for context: {e}", exc_info=True)
+    
+    full_context = "\n".join(context_parts)
+    return full_context, sources_used
+
+
+async def generate_assistant_response(
+    message: str,
+    intent: str,
+    entities: Dict,
+    context: str,
+    conversation_history: List[Dict]
+) -> str:
+    """
+    Genere la reponse de l'assistant via Perplexity
+    """
+    if not PERPLEXITY_API_KEY or not OPENAI_SDK_AVAILABLE:
+        return "Je suis desole, le service d'IA n'est pas disponible pour le moment."
+    
+    # Construire le prompt selon l'intention
+    if intent == "create_watch":
+        task_instruction = """
+L'utilisateur souhaite creer une veille. Propose les parametres en fonction de ce qu'il a dit.
+Si des informations manquent (sujet, frequence, email), demande-les poliment.
+Resume les parametres proposes et indique que tu vas creer la veille si confirmee.
+"""
+    elif intent == "list_watches":
+        task_instruction = """
+L'utilisateur veut voir ses veilles. Presente la liste de maniere claire et propose des actions.
+"""
+    elif intent == "generate_report":
+        task_instruction = """
+L'utilisateur souhaite generer un rapport. Confirme le sujet et le type d'analyse.
+Propose de lancer la generation si les parametres sont clairs.
+"""
+    elif intent == "explanation":
+        task_instruction = """
+L'utilisateur a une question sur le fonctionnement de Prometheus.
+Reponds de maniere claire et concise en utilisant la documentation fournie.
+Propose des actions concretes si pertinent.
+"""
+    else:
+        task_instruction = """
+Reponds de maniere amicale et professionnelle. Si l'utilisateur semble vouloir effectuer une action,
+propose-la explicitement.
+"""
+    
+    system_prompt = f"""{context}
+
+## Ta mission actuelle:
+{task_instruction}
+
+## Regles:
+- Sois concis (2-4 paragraphes max)
+- Propose toujours des actions concretes quand c'est pertinent
+- Si tu proposes une action, indique clairement les parametres
+- Utilise un ton professionnel mais accessible
+"""
+    
+    messages = [{"role": "system", "content": system_prompt}]
+
+    # Ajouter l'historique de conversation (max 6 derniers)
+    # S'assurer que les messages alternent correctement (user/assistant)
+    last_role = "system"
+    for msg in conversation_history[-6:]:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        if not content:
+            continue
+
+        # Ensure alternation: after system/assistant, we need user; after user, we need assistant
+        if last_role in ["system", "assistant"] and role == "user":
+            messages.append({"role": "user", "content": content})
+            last_role = "user"
+        elif last_role == "user" and role == "assistant":
+            messages.append({"role": "assistant", "content": content})
+            last_role = "assistant"
+        # Skip messages that would break alternation
+
+    # Add the current user message
+    # If the last message was from user, add a placeholder assistant response first
+    if last_role == "user":
+        messages.append({"role": "assistant", "content": "D'accord."})
+
+    messages.append({"role": "user", "content": message})
+    
+    try:
+        client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url=PERPLEXITY_BASE_URL, timeout=60.0)
+        
+        response = client.chat.completions.create(
+            model=get_model_for_task("chat"),
+            messages=messages,
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        return response.choices[0].message.content
+    
+    except Exception as e:
+        logger.error(f"Error generating assistant response: {e}")
+        return "Une erreur s'est produite. Veuillez reessayer."
+
+
+def is_app_help_question(message: str) -> bool:
+    """Detecte si la question concerne l'aide sur l'application Prometheus."""
+    message_lower = message.lower()
+    app_keywords = [
+        "comment", "aide", "help", "expliqu", "tutoriel", "guide",
+        "prometheus", "plateforme", "application", "app",
+        "veille", "rapport", "creer", "créer", "configurer",
+        "fonctionn", "utiliser", "marche", "fonctionne",
+        "bouton", "page", "menu", "interface", "etape", "étape"
+    ]
+    return any(kw in message_lower for kw in app_keywords)
+
+
+async def generate_smart_chat_response(
+    message: str,
+    app_context: str,
+    conversation_history: List[Dict]
+) -> str:
+    """
+    Genere une reponse intelligente:
+    - Questions sur l'app -> guide l'utilisateur avec le contexte app
+    - Questions generales -> recherche web via Perplexity
+    """
+    is_help = is_app_help_question(message)
+    
+    if is_help:
+        # Mode aide: utiliser le contexte de l'application
+        system_prompt = f"""{app_context}
+
+## Ta mission:
+Tu es l'assistant de la plateforme Prometheus. Tu guides les utilisateurs sur:
+- Comment creer et gerer des veilles automatisees
+- Comment generer des rapports d'analyse  
+- Les fonctionnalites de la plateforme
+- Les bonnes pratiques d'utilisation
+
+## Regles:
+- Sois concis et clair (2-4 paragraphes max)
+- Donne des instructions etape par etape quand c'est une question "comment faire"
+- Utilise un ton professionnel mais accessible
+- Propose des actions concretes
+"""
+    else:
+        # Mode recherche: repondre avec recherche web
+        system_prompt = """Tu es un assistant de recherche intelligent integre a la plateforme Prometheus.
+
+## Ta mission:
+Tu reponds aux questions generales de l'utilisateur en effectuant des recherches.
+Tu fournis des informations precises, sourcees et a jour.
+
+## Regles:
+- Reponds de maniere structuree et claire
+- Cite tes sources quand c'est pertinent
+- Sois concis (3-5 paragraphes max)
+- Si la question est liee a un sujet d'analyse strategique, suggere de generer un rapport complet via Prometheus
+- Utilise un ton professionnel
+
+## Contexte:
+L'utilisateur utilise Prometheus, une plateforme d'intelligence strategique.
+S'il pose une question qui pourrait faire l'objet d'une analyse approfondie, 
+rappelle-lui qu'il peut generer un rapport complet depuis la page principale.
+"""
+    
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Ajouter l'historique de conversation (paires valides)
+    history_pairs = []
+    i = 0
+    history = conversation_history[-6:] if conversation_history else []
+    while i < len(history) - 1:
+        user_msg = history[i]
+        assistant_msg = history[i + 1]
+        if user_msg.get("role") == "user" and assistant_msg.get("role") == "assistant":
+            if user_msg.get("content") and assistant_msg.get("content"):
+                history_pairs.append(user_msg)
+                history_pairs.append(assistant_msg)
+        i += 2
+    
+    for msg in history_pairs:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    messages.append({"role": "user", "content": message})
+    
+    try:
+        client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url=PERPLEXITY_BASE_URL, timeout=60.0)
+        
+        # Utiliser un modele avec recherche pour les questions generales
+        model = "sonar" if not is_help else get_model_for_task("chat")
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        return response.choices[0].message.content
+    
+    except Exception as e:
+        logger.error(f"Error generating chat response: {e}")
+        return "Une erreur s'est produite. Veuillez reessayer."
+
+
+@app.post("/assistant/chat", response_model=AssistantChatResponse)
+async def assistant_chat_endpoint(request: AssistantChatRequest):
+    """
+    Endpoint du chat assistant intelligent.
+    - Questions sur l'app: guide l'utilisateur
+    - Questions generales: recherche web via Perplexity
+    """
+    try:
+        # Construire le contexte avec la connaissance de l'app
+        context, _ = await build_assistant_context(
+            request.user_id,
+            request.message
+        )
+        
+        # Generer la reponse (aide ou recherche selon la question)
+        response_message = await generate_smart_chat_response(
+            request.message,
+            context,
+            request.conversation_history or []
+        )
+        
+        # Sauvegarder dans l'historique (legacy RAG)
+        try:
+            add_conversation(request.user_id, request.message, response_message, analysis_type="assistant_chat")
+        except Exception as e:
+            logger.warning(f"Could not save to RAG memory: {e}")
+        
+        # Sauvegarder dans memory-service (nouveau système)
+        # Pass user_id directly - memory-service handles UUID to INT conversion
+        user_id_for_memory = request.user_id if request.user_id else "1"
+
+        asyncio.create_task(save_conversation_to_memory(
+            user_id=user_id_for_memory,
+            query=request.message,
+            response=response_message,
+            conversation_type="assistant_chat",
+            analysis_type="assistant_chat",
+            business_type=None
+        ))
+        logger.info(f"📝 Sauvegarde async conversation assistant pour user {user_id_for_memory[:16]}...")
+        
+        return AssistantChatResponse(message=response_message)
+        
+    except Exception as e:
+        logger.error(f"Assistant chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

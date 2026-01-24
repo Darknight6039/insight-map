@@ -1,18 +1,293 @@
 version: '3.8'
 
+# =============================================================================
+# INSIGHT MVP - DOCKER COMPOSE WITH SUPABASE SELF-HOSTED
+# =============================================================================
+
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: insight_db
-      POSTGRES_USER: insight_user
-      POSTGRES_PASSWORD: insight_password_2024
+  # ===========================================================================
+  # SUPABASE CORE SERVICES
+  # ===========================================================================
+
+  # PostgreSQL Database (replaces previous postgres service)
+  supabase-db:
+    image: supabase/postgres:15.1.1.78
+    container_name: supabase-db
+    healthcheck:
+      test: pg_isready -U postgres -h localhost
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+    restart: unless-stopped
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGPASSWORD: ${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      POSTGRES_PASSWORD: ${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      JWT_EXP: 3600
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - supabase_db_data:/var/lib/postgresql/data:Z
+      - ./supabase/volumes/db/00-init-roles.sql:/docker-entrypoint-initdb.d/migrations/00-init-roles.sql:Z
+      - ./supabase/volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
     networks:
       - insight-network
+
+  # Supabase Auth (GoTrue)
+  supabase-auth:
+    image: supabase/gotrue:v2.164.0
+    container_name: supabase-auth
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-http://localhost:3000}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS:-false}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-false}
+
+      # SMTP Configuration
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASSWORD}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_FROM:-noreply@insight.com}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-Insight MVP}
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+
+      # Rate limiting
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: 100
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: true
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: 10
+    networks:
+      - insight-network
+
+  # Supabase REST API (PostgREST)
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: supabase-rest
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public,graphql_public}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+    command: "postgrest"
+    networks:
+      - insight-network
+
+  # Supabase Realtime
+  supabase-realtime:
+    image: supabase/realtime:v2.33.58
+    container_name: supabase-realtime
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sSfL", "--head", "-o", "/dev/null", "-H", "Authorization: Bearer ${SUPABASE_ANON_KEY}", "http://localhost:4000/api/tenants/realtime-dev/health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DB_HOST: supabase-db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      SECRET_KEY_BASE: ${SUPABASE_JWT_SECRET}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: 10000
+      APP_NAME: realtime
+      SEED_SELF_HOST: true
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+      SECURE_CHANNELS: "true"
+      SLOT_NAME: supabase_realtime_rls
+      TEMPORARY_SLOT: "true"
+    networks:
+      - insight-network
+
+  # Supabase Storage
+  supabase-storage:
+    image: supabase/storage-api:v1.11.13
+    container_name: supabase-storage
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-rest:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/status"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      ANON_KEY: ${SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      POSTGREST_URL: http://supabase-rest:3000
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://supabase-imgproxy:8080
+    volumes:
+      - supabase_storage_data:/var/lib/storage:z
+    networks:
+      - insight-network
+
+  # Supabase Image Proxy
+  supabase-imgproxy:
+    image: darthsim/imgproxy:v3.8.0
+    container_name: supabase-imgproxy
+    healthcheck:
+      test: ["CMD", "imgproxy", "health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    environment:
+      IMGPROXY_BIND: ":8080"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION:-true}
+    volumes:
+      - supabase_storage_data:/var/lib/storage:z
+    networks:
+      - insight-network
+
+  # Supabase Meta (Postgres Meta)
+  supabase-meta:
+    image: supabase/postgres-meta:v0.84.2
+    container_name: supabase-meta
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+    networks:
+      - insight-network
+
+  # Supabase Kong (API Gateway)
+  supabase-kong:
+    image: kong:2.8.1
+    container_name: supabase-kong
+    restart: unless-stopped
+    ports:
+      - "${KONG_HTTP_PORT:-8000}:8000/tcp"
+      - "${KONG_HTTPS_PORT:-8443}:8443/tcp"
+    depends_on:
+      supabase-auth:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-supabase}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-this_password_is_insecure_and_should_be_updated}
+    volumes:
+      - ./supabase/volumes/api/kong.yml:/home/kong/kong.yml:ro
+    networks:
+      - insight-network
+
+  # Supabase Studio (Dashboard) - Optional for development
+  supabase-studio:
+    image: supabase/studio:20241202-71e5240
+    container_name: supabase-studio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/profile', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    depends_on:
+      supabase-meta:
+        condition: service_started
+    ports:
+      - "${STUDIO_PORT:-3001}:3000/tcp"
+    environment:
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      POSTGRES_PASSWORD: ${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION:-Insight MVP}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-insight-mvp}
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      AUTH_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY:-}
+      LOGFLARE_URL: http://supabase-analytics:4000
+      NEXT_PUBLIC_ENABLE_LOGS: true
+      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+    networks:
+      - insight-network
+
+  # ===========================================================================
+  # INSIGHT MVP SERVICES (Updated to use Supabase)
+  # ===========================================================================
 
   qdrant:
     image: qdrant/qdrant:v1.5.1
@@ -27,10 +302,22 @@ services:
     build: ./gateway-api
     env_file: .env
     ports:
-      - "8000:8000"
+      - "8080:8000"
     depends_on:
-      - postgres
-      - qdrant
+      supabase-db:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      # Supabase configuration
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      # Database (connect to Supabase PostgreSQL)
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
     networks:
       - insight-network
 
@@ -40,8 +327,12 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      - postgres
-      - vector-service
+      supabase-db:
+        condition: service_healthy
+      vector-service:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
     networks:
       - insight-network
     volumes:
@@ -77,7 +368,12 @@ services:
     ports:
       - "8004:8004"
     depends_on:
-      - postgres
+      supabase-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
     networks:
       - insight-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
@@ -90,8 +386,12 @@ services:
     ports:
       - "8005:8005"
     depends_on:
-      - postgres
-      - qdrant
+      supabase-db:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
     networks:
       - insight-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
@@ -104,6 +404,10 @@ services:
     depends_on:
       - rag-service
       - report-service
+    environment:
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      MEMORY_SERVICE_URL: http://memory-service:8008
     networks:
       - insight-network
     volumes:
@@ -116,15 +420,40 @@ services:
     ports:
       - "8007:8007"
     depends_on:
-      - postgres
-      - backend-service
-      - report-service
+      supabase-db:
+        condition: service_healthy
+      backend-service:
+        condition: service_started
+      report-service:
+        condition: service_started
     networks:
       - insight-network
     environment:
-      - DATABASE_URL=postgresql://insight_user:insight_password_2024@postgres:5432/insight_db
-      - BACKEND_SERVICE_URL=http://backend-service:8006
-      - REPORT_URL=http://report-service:8004
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+      BACKEND_SERVICE_URL: http://backend-service:8006
+      REPORT_URL: http://report-service:8004
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    restart: unless-stopped
+
+  memory-service:
+    build: ./memory-service
+    env_file: .env
+    ports:
+      - "8008:8008"
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - insight-network
+    environment:
+      DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+    volumes:
+      - ./data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
     restart: unless-stopped
 
   frontend-gradio:
@@ -146,32 +475,48 @@ services:
       timeout: 10s
       retries: 3
 
-  # Modern Open WebUI Frontend with Liquid Glass Design
+  # Modern Open WebUI Frontend with Supabase Auth
   frontend-openwebui:
     build:
       context: ./frontend-openwebui
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
         - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8006}
         - NEXT_PUBLIC_SCHEDULER_URL=${NEXT_PUBLIC_SCHEDULER_URL:-http://localhost:8007}
         - NEXT_PUBLIC_REPORT_URL=${NEXT_PUBLIC_REPORT_URL:-http://localhost:8004}
+        - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     depends_on:
-      - gateway-api
-      - backend-service
-      - scheduler-service
+      supabase-kong:
+        condition: service_started
+      gateway-api:
+        condition: service_started
+      backend-service:
+        condition: service_started
+      scheduler-service:
+        condition: service_started
     networks:
       - insight-network
     restart: unless-stopped
 
+# =============================================================================
+# VOLUMES
+# =============================================================================
 volumes:
-  postgres_data:
+  supabase_db_data:
+  supabase_storage_data:
   qdrant_data:
 
+# =============================================================================
+# NETWORKS
+# =============================================================================
 networks:
   insight-network:
     driver: bridge

@@ -15,6 +15,7 @@ class WatchConfig(Base):
     __tablename__ = "watch_configs"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)  # Owner of the watch
     name = Column(String(255), nullable=False)
     topic = Column(String(500), nullable=False)  # Sujet de la veille
     sector = Column(String(100), default="general")  # Secteur d'activité
@@ -33,6 +34,7 @@ class WatchConfig(Base):
     def to_dict(self):
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "name": self.name,
             "topic": self.topic,
             "sector": self.sector,
@@ -53,6 +55,7 @@ class WatchHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     watch_id = Column(Integer, ForeignKey("watch_configs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, nullable=True, index=True)  # Audit trail of watch owner
     executed_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50), default="pending")  # pending, running, success, failed
     report_id = Column(Integer, nullable=True)  # ID du rapport généré
@@ -66,6 +69,7 @@ class WatchHistory(Base):
         return {
             "id": self.id,
             "watch_id": self.watch_id,
+            "user_id": self.user_id,
             "executed_at": self.executed_at.isoformat() if self.executed_at else None,
             "status": self.status,
             "report_id": self.report_id,

@@ -4,11 +4,11 @@ Scheduler Service - FastAPI application for automated market watches
 
 import os
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from loguru import logger
 from datetime import datetime
@@ -33,6 +33,8 @@ watch_scheduler = WatchScheduler(DATABASE_URL)
 
 # Pydantic models for API
 class WatchCreate(BaseModel):
+    # Accept both int and str (UUID) for backward compatibility with Supabase migration
+    user_id: Union[int, str]
     name: str
     topic: str
     sector: str = "general"
@@ -82,6 +84,7 @@ class WatchUpdate(BaseModel):
 
 class WatchResponse(BaseModel):
     id: int
+    user_id: int
     name: str
     topic: str
     sector: str
@@ -102,6 +105,7 @@ class WatchResponse(BaseModel):
 class HistoryResponse(BaseModel):
     id: int
     watch_id: int
+    user_id: Optional[int]
     executed_at: Optional[str]
     status: str
     report_id: Optional[int]
@@ -119,6 +123,57 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Cache for UUID to integer user_id mapping
+_user_id_cache: dict = {}
+
+
+def resolve_user_id(user_id_input: Union[int, str], db: Session) -> int:
+    """
+    Resolve a user_id input (UUID string or integer) to an integer user_id.
+    Uses the user_id_mapping table to convert Supabase UUIDs to legacy integer IDs.
+
+    Args:
+        user_id_input: Either a UUID string from Supabase or an integer user_id
+        db: Database session
+
+    Returns:
+        Integer user_id for database operations
+    """
+    # If it's already an integer, return it
+    if isinstance(user_id_input, int):
+        return user_id_input
+
+    try:
+        return int(user_id_input)
+    except (ValueError, TypeError):
+        pass
+
+    # Check cache first
+    if user_id_input in _user_id_cache:
+        return _user_id_cache[user_id_input]
+
+    # It's likely a UUID - look it up in the mapping table
+    try:
+        result = db.execute(
+            text("SELECT old_user_id FROM user_id_mapping WHERE supabase_user_id = :uuid"),
+            {"uuid": user_id_input}
+        ).fetchone()
+
+        if result:
+            old_user_id = result[0]
+            # Cache the result
+            _user_id_cache[user_id_input] = old_user_id
+            logger.info(f"Resolved UUID {str(user_id_input)[:8]}... to user_id {old_user_id}")
+            return old_user_id
+        else:
+            logger.warning(f"No mapping found for UUID {user_id_input}, defaulting to user_id=1")
+            return 1
+
+    except Exception as e:
+        logger.error(f"Error resolving user_id {user_id_input}: {e}")
+        return 1
 
 
 # Lifespan context manager
@@ -206,8 +261,12 @@ async def get_cron_presets():
 async def create_watch(watch_data: WatchCreate, db: Session = Depends(get_db)):
     """Create a new watch configuration"""
     try:
+        # Resolve UUID to integer if needed (Supabase migration compatibility)
+        resolved_user_id = resolve_user_id(watch_data.user_id, db)
+
         # Create watch in database
         watch = WatchConfig(
+            user_id=resolved_user_id,  # Owner of the watch (resolved from UUID if needed)
             name=watch_data.name,
             topic=watch_data.topic,
             sector=watch_data.sector,
@@ -244,13 +303,20 @@ async def create_watch(watch_data: WatchCreate, db: Session = Depends(get_db)):
 @app.get("/watches", response_model=List[WatchResponse])
 async def list_watches(
     active_only: bool = False,
+    user_id: Optional[str] = None,  # Optional for admin access, accepts UUID or integer string
     db: Session = Depends(get_db)
 ):
     """List all watch configurations"""
     query = db.query(WatchConfig)
+
+    # Filter by user if user_id provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
     if active_only:
         query = query.filter(WatchConfig.is_active == True)
-    
+
     watches = query.order_by(WatchConfig.created_at.desc()).all()
     
     result = []
@@ -264,11 +330,22 @@ async def list_watches(
 
 
 @app.get("/watches/{watch_id}", response_model=WatchResponse)
-async def get_watch(watch_id: int, db: Session = Depends(get_db)):
+async def get_watch(
+    watch_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Get a specific watch configuration"""
-    watch = db.query(WatchConfig).filter(WatchConfig.id == watch_id).first()
+    query = db.query(WatchConfig).filter(WatchConfig.id == watch_id)
+
+    # Add user filter if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
+    watch = query.first()
     if not watch:
-        raise HTTPException(status_code=404, detail="Watch not found")
+        raise HTTPException(status_code=404, detail="Watch not found or access denied")
     
     watch_dict = watch.to_dict()
     job_info = watch_scheduler.get_job_info(watch.id)
@@ -281,18 +358,27 @@ async def get_watch(watch_id: int, db: Session = Depends(get_db)):
 async def update_watch(
     watch_id: int,
     watch_data: WatchUpdate,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
     db: Session = Depends(get_db)
 ):
     """Update a watch configuration"""
-    watch = db.query(WatchConfig).filter(WatchConfig.id == watch_id).first()
+    query = db.query(WatchConfig).filter(WatchConfig.id == watch_id)
+
+    # Add user filter if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
+    watch = query.first()
     if not watch:
-        raise HTTPException(status_code=404, detail="Watch not found")
+        raise HTTPException(status_code=404, detail="Watch not found or access denied")
     
     try:
         # Update fields
         update_data = watch_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            setattr(watch, field, value)
+            if field != 'user_id':  # Don't allow changing owner
+                setattr(watch, field, value)
         
         watch.updated_at = datetime.utcnow()
         db.commit()
@@ -319,11 +405,22 @@ async def update_watch(
 
 
 @app.delete("/watches/{watch_id}")
-async def delete_watch(watch_id: int, db: Session = Depends(get_db)):
+async def delete_watch(
+    watch_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Delete a watch configuration"""
-    watch = db.query(WatchConfig).filter(WatchConfig.id == watch_id).first()
+    query = db.query(WatchConfig).filter(WatchConfig.id == watch_id)
+
+    # Add user filter if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
+    watch = query.first()
     if not watch:
-        raise HTTPException(status_code=404, detail="Watch not found")
+        raise HTTPException(status_code=404, detail="Watch not found or access denied")
     
     try:
         watch_name = watch.name
@@ -345,11 +442,22 @@ async def delete_watch(watch_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/watches/{watch_id}/trigger")
-async def trigger_watch(watch_id: int, db: Session = Depends(get_db)):
+async def trigger_watch(
+    watch_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Manually trigger a watch execution"""
-    watch = db.query(WatchConfig).filter(WatchConfig.id == watch_id).first()
+    query = db.query(WatchConfig).filter(WatchConfig.id == watch_id)
+
+    # Add user filter if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
+    watch = query.first()
     if not watch:
-        raise HTTPException(status_code=404, detail="Watch not found")
+        raise HTTPException(status_code=404, detail="Watch not found or access denied")
     
     try:
         logger.info(f"Manually triggering watch: {watch.name} (ID: {watch_id})")
@@ -396,12 +504,21 @@ async def toggle_watch(watch_id: int, db: Session = Depends(get_db)):
 async def get_watch_history(
     watch_id: int,
     limit: int = 10,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
     db: Session = Depends(get_db)
 ):
     """Get execution history for a watch"""
-    watch = db.query(WatchConfig).filter(WatchConfig.id == watch_id).first()
+    # Verify ownership first
+    query = db.query(WatchConfig).filter(WatchConfig.id == watch_id)
+
+    # Add user filter if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(WatchConfig.user_id == resolved_uid)
+
+    watch = query.first()
     if not watch:
-        raise HTTPException(status_code=404, detail="Watch not found")
+        raise HTTPException(status_code=404, detail="Watch not found or access denied")
     
     history = db.query(WatchHistory)\
         .filter(WatchHistory.watch_id == watch_id)\

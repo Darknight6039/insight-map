@@ -1,428 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Variables CSS pour le thème corporate tech */
-:root {
-  --glass-bg: rgba(26, 32, 44, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  
-  /* Palette Corporate Tech */
-  --primary: #1a202c;           /* Navy dark */
-  --secondary: #2d3748;         /* Charcoal */
-  --accent: #00a3ff;            /* Tech blue */
-  --surface: #f7fafc;           /* Clean white */
-  --text-primary: #2d3748;      /* Dark text */
-  --text-secondary: #718096;    /* Gray text */
-  --text-white: #ffffff;        /* White text */
-  --success: #38a169;           /* Green */
-  --warning: #ed8936;           /* Orange */
-  --error: #e53e3e;             /* Red */
-  
-  /* Glass effects adaptés */
-  --glass-primary: rgba(26, 32, 44, 0.9);
-  --glass-secondary: rgba(45, 55, 72, 0.8);
-  --glass-accent: rgba(0, 163, 255, 0.1);
+/* Axial Intelligence Design System - Brand Colors */
+/* #330e7d (deep purple), #7976f7 (violet), #07063a (navy), #ffffff, #0a050f */
 
-  /* Axial brand variables (align with Tailwind theme.extend.colors.axial) */
-  --axial-blue: #1a202c;
-  --axial-light-blue: #2d3748;
-  /* Accent corporate plus visible (bleu canard) */
-  --axial-accent: #00c2b2;
-  
-  /* Animation timings */
-  --transition-fast: 200ms;
-  --transition-normal: 400ms;
-  --transition-slow: 600ms;
-  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
-  --easing-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+@layer base {
+  /* Light Mode */
+  :root {
+    --background: 240 20% 98%;
+    --foreground: 261 79% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 261 79% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 261 79% 20%;
+
+    --primary: 261 79% 27%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 242 40% 94%;
+    --secondary-foreground: 261 79% 27%;
+
+    --muted: 240 15% 92%;
+    --muted-foreground: 261 30% 45%;
+
+    --accent: 242 88% 72%;
+    --accent-foreground: 261 79% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 20% 88%;
+    --input: 240 20% 88%;
+    --ring: 261 79% 27%;
+
+    --radius: 0.75rem;
+
+    /* Custom tokens */
+    --card-hover: 240 20% 96%;
+    --success: 142 76% 36%;
+    --warning: 38 92% 50%;
+
+    /* Gradient icon backgrounds */
+    --gradient-purple: linear-gradient(135deg, hsl(261 79% 35%) 0%, hsl(242 88% 72%) 100%);
+    --gradient-violet: linear-gradient(135deg, hsl(242 88% 65%) 0%, hsl(280 70% 60%) 100%);
+    --gradient-pink: linear-gradient(135deg, hsl(330 80% 55%) 0%, hsl(280 70% 50%) 100%);
+    --gradient-orange: linear-gradient(135deg, hsl(25 95% 55%) 0%, hsl(10 90% 50%) 100%);
+    --gradient-teal: linear-gradient(135deg, hsl(174 72% 40%) 0%, hsl(160 60% 35%) 100%);
+    --gradient-blue: linear-gradient(135deg, hsl(210 80% 50%) 0%, hsl(230 70% 55%) 100%);
+
+    --sidebar-background: 240 20% 98%;
+    --sidebar-foreground: 261 79% 20%;
+    --sidebar-primary: 261 79% 27%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 242 40% 94%;
+    --sidebar-accent-foreground: 261 79% 27%;
+    --sidebar-border: 240 20% 88%;
+    --sidebar-ring: 261 79% 27%;
+  }
+
+  /* Dark Mode - Deep Space Theme (default) */
+  .dark {
+    --background: 270 33% 4%;
+    --foreground: 0 0% 100%;
+
+    --card: 260 25% 8%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 260 25% 8%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 242 88% 72%;
+    --primary-foreground: 270 33% 4%;
+
+    --secondary: 260 20% 14%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 260 18% 12%;
+    --muted-foreground: 250 20% 65%;
+
+    --accent: 261 79% 27%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 260 20% 14%;
+    --input: 260 20% 14%;
+    --ring: 242 88% 72%;
+
+    /* Custom tokens */
+    --card-hover: 260 25% 12%;
+    --success: 142 60% 45%;
+    --warning: 38 85% 55%;
+
+    --sidebar-background: 270 33% 3%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 242 88% 72%;
+    --sidebar-primary-foreground: 270 33% 4%;
+    --sidebar-accent: 260 20% 14%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 260 20% 14%;
+    --sidebar-ring: 242 88% 72%;
+  }
 }
 
-/* Body avec background corporate */
-* {
-  box-sizing: border-box;
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html, body, #__next {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
 }
 
-html, body, #__next {
-  height: 100vh;
-  width: 100vw;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-}
+@layer components {
+  /* Gradient icon utilities */
+  .gradient-icon-purple {
+    background: var(--gradient-purple);
+  }
+  .gradient-icon-violet {
+    background: var(--gradient-violet);
+  }
+  .gradient-icon-pink {
+    background: var(--gradient-pink);
+  }
+  .gradient-icon-orange {
+    background: var(--gradient-orange);
+  }
+  .gradient-icon-teal {
+    background: var(--gradient-teal);
+  }
+  .gradient-icon-blue {
+    background: var(--gradient-blue);
+  }
 
-body {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, #4a5568 100%);
-  background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
-  color: var(--text-white);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-}
+  /* Interactive card styles */
+  .card-interactive {
+    @apply transition-all duration-200 hover:bg-card-hover cursor-pointer;
+  }
 
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  /* Status indicators */
+  .status-active {
+    @apply bg-success/15 text-success border-success/30;
+  }
+
+  .status-indicator {
+    @apply w-2 h-2 rounded-full bg-success animate-pulse;
+  }
 }
 
 /* ============================================
-   ENHANCED LIQUID GLASS EFFECTS
-   ============================================ */
-
-/* Glass morphism utilities corporate - ENHANCED */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-}
-
-.glass-card {
-  @apply glass rounded-2xl p-6;
-  background: var(--glass-primary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.glass-card:hover {
-  background: var(--glass-secondary);
-  transform: translateY(-4px) scale(1.01);
-  backdrop-filter: blur(24px) saturate(200%);
-  -webkit-backdrop-filter: blur(24px) saturate(200%);
-  box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.25),
-    0 0 40px rgba(0, 194, 178, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.glass-button {
-  @apply glass rounded-xl px-6 py-3;
-  background: var(--glass-accent);
-  border: 1px solid var(--accent);
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.glass-button:hover {
-  transform: scale(1.05) translateY(-2px);
-  background: rgba(0, 163, 255, 0.25);
-  box-shadow: 
-    0 12px 35px rgba(0, 163, 255, 0.35),
-    0 0 20px rgba(0, 194, 178, 0.2);
-}
-
-.glass-button:active {
-  transform: scale(0.98);
-}
-
-/* Glass input field */
-.glass-input {
-  @apply rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.glass-input:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--axial-accent);
-  box-shadow: 0 0 0 2px rgba(0, 194, 178, 0.2);
-}
-
-.glass-input option {
-  background: var(--primary);
-  color: white;
-}
-
-/* Primary action button */
-.primary-button {
-  @apply rounded-xl px-6 py-3 font-medium text-white;
-  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
-  border: none;
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.primary-button:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 
-    0 12px 35px rgba(0, 194, 178, 0.35),
-    0 0 20px rgba(0, 163, 255, 0.2);
-}
-
-.primary-button:active {
-  transform: translateY(0) scale(0.98);
-}
-
-/* ============================================
-   ENHANCED ANIMATIONS
-   ============================================ */
-
-@keyframes liquid {
-  0%, 100% { 
-    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; 
-    transform: rotate(0deg) scale(1);
-  }
-  50% { 
-    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
-    transform: rotate(180deg) scale(1.05);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(0, 194, 178, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 40px rgba(0, 194, 178, 0.6);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-@keyframes scale-in {
-  0% {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.liquid-blob {
-  background: linear-gradient(45deg, var(--primary), var(--accent), var(--secondary));
-  filter: blur(40px);
-  opacity: 0.2;
-  animation: liquid 8s ease-in-out infinite;
-}
-
-/* Chat bubble avec effet liquid - ENHANCED */
-.chat-bubble {
-  @apply glass-card relative overflow-hidden;
-}
-
-.chat-bubble::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent, rgba(0, 212, 170, 0.15), transparent);
-  transform: rotate(45deg);
-  transition: all var(--transition-slow) var(--easing-smooth);
-}
-
-.chat-bubble:hover::before {
-  transform: rotate(45deg) translate(50%, 50%);
-}
-
-/* Scrollbar personnalisée */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--axial-accent), var(--accent));
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--axial-accent);
-}
-
-/* Effet glow pour les éléments interactifs - ENHANCED */
-.glow-on-hover {
-  transition: all var(--transition-normal) var(--easing-smooth);
-  position: relative;
-}
-
-.glow-on-hover::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: linear-gradient(45deg, var(--axial-accent), var(--accent));
-  opacity: 0;
-  z-index: -1;
-  filter: blur(15px);
-  transition: opacity var(--transition-normal) var(--easing-smooth);
-}
-
-.glow-on-hover:hover {
-  box-shadow: 0 0 30px rgba(0, 212, 170, 0.4);
-  transform: translateY(-3px);
-}
-
-.glow-on-hover:hover::after {
-  opacity: 0.5;
-}
-
-/* Animation de chargement liquide - ENHANCED */
-.loading-liquid {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(45deg, var(--axial-blue), var(--axial-accent));
-  animation: liquid 2s ease-in-out infinite, pulse-glow 1.5s ease-in-out infinite;
-}
-
-/* Effet parallax subtil */
-.parallax {
-  transform: translateZ(0);
-  transition: transform 0.1s ease-out;
-}
-
-/* Cards avec effet de profondeur - ENHANCED */
-.depth-card {
-  @apply glass-card relative;
-  transform-style: preserve-3d;
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.depth-card:hover {
-  transform: perspective(1000px) rotateX(3deg) rotateY(3deg) translateY(-5px);
-  box-shadow: 
-    0 25px 50px rgba(0, 0, 0, 0.3),
-    -10px 10px 30px rgba(0, 194, 178, 0.1);
-}
-
-/* Input fields avec style liquid - ENHANCED */
-.input-liquid {
-  @apply glass rounded-xl border-0 px-4 py-3 text-white placeholder-gray-400 focus:outline-none;
-  background: rgba(255, 255, 255, 0.05);
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.input-liquid:focus {
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: 
-    0 0 0 2px var(--axial-accent),
-    0 10px 30px rgba(0, 194, 178, 0.15);
-  transform: scale(1.01);
-}
-
-/* Boutons avec effet liquid - ENHANCED */
-.btn-liquid {
-  @apply relative overflow-hidden rounded-xl px-6 py-3 font-medium text-white;
-  background: linear-gradient(135deg, var(--axial-blue), var(--axial-light-blue));
-  transition: all var(--transition-normal) var(--easing-smooth);
-}
-
-.btn-liquid::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  transition: left var(--transition-slow) var(--easing-smooth);
-}
-
-.btn-liquid:hover::before {
-  left: 100%;
-}
-
-.btn-liquid:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 
-    0 15px 35px rgba(0, 83, 170, 0.35),
-    0 0 20px rgba(0, 194, 178, 0.2);
-}
-
-.btn-liquid:active {
-  transform: translateY(0) scale(0.98);
-}
-
-/* Navbar corporate avec effet glass */
-.navbar-glass {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100vw !important;
-  z-index: 1000 !important;
-  padding: 1rem 1.5rem !important;
-  background: var(--glass-primary) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.15) !important;
-  display: block !important;
-  visibility: visible !important;
-}
-
-/* Effet de typing pour le chat - ENHANCED */
-.typing-indicator {
-  @apply flex space-x-1.5 items-center;
-}
-
-.typing-dot {
-  @apply w-2 h-2 rounded-full;
-  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
-  animation: typing-bounce 1.4s ease-in-out infinite;
-}
-
-.typing-dot:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes typing-bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
-    opacity: 0.5;
-  }
-  30% {
-    transform: translateY(-8px);
-    opacity: 1;
-  }
-}
-
-/* Messages avec style liquid - ENHANCED */
-.message-user {
-  @apply glass-card ml-auto max-w-xs;
-  background: linear-gradient(135deg, var(--axial-blue), var(--axial-light-blue));
-}
-
-.message-assistant {
-  @apply glass-card mr-auto max-w-md;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* ============================================
-   CHAT WIDGET STYLES
+   CHAT WIDGET STYLES (Preserved)
    ============================================ */
 
 /* Floating button */
@@ -433,23 +177,23 @@ body {
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
+  background: linear-gradient(135deg, hsl(242 88% 72%), hsl(261 79% 45%));
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  box-shadow: 
-    0 8px 30px rgba(0, 194, 178, 0.4),
+  box-shadow:
+    0 8px 30px rgba(121, 118, 247, 0.4),
     0 4px 15px rgba(0, 0, 0, 0.2);
-  transition: all var(--transition-normal) var(--easing-smooth);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .chat-widget-button:hover {
   transform: scale(1.1);
-  box-shadow: 
-    0 12px 40px rgba(0, 194, 178, 0.5),
+  box-shadow:
+    0 12px 40px rgba(121, 118, 247, 0.5),
     0 6px 20px rgba(0, 0, 0, 0.25);
 }
 
@@ -458,7 +202,7 @@ body {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
+  background: linear-gradient(135deg, hsl(242 88% 72%), hsl(261 79% 45%));
   opacity: 0.4;
   animation: chat-pulse 2s ease-in-out infinite;
   z-index: -1;
@@ -488,20 +232,18 @@ body {
   z-index: 9998;
   display: flex;
   flex-direction: column;
-  background: var(--glass-primary);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 
+  background: hsl(260 25% 8%);
+  border: 1px solid hsl(260 20% 14%);
+  box-shadow:
     0 25px 80px rgba(0, 0, 0, 0.4),
-    0 0 40px rgba(0, 194, 178, 0.15);
+    0 0 40px rgba(121, 118, 247, 0.15);
 }
 
 /* Chat widget header */
 .chat-widget-header {
   padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: hsl(260 25% 6%);
+  border-bottom: 1px solid hsl(260 20% 14%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -516,55 +258,54 @@ body {
 
 /* Chat widget message styles */
 .chat-widget-message-user {
-  background: linear-gradient(135deg, var(--axial-blue), var(--axial-light-blue));
+  background: linear-gradient(135deg, hsl(261 79% 27%), hsl(242 88% 50%));
   padding: 10px 14px;
   border-radius: 16px 16px 4px 16px;
 }
 
 .chat-widget-message-assistant {
-  background: rgba(255, 255, 255, 0.08);
+  background: hsl(260 20% 14%);
   padding: 10px 14px;
   border-radius: 16px 16px 16px 4px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid hsl(260 20% 18%);
 }
 
 /* Chat widget input area */
 .chat-widget-input {
   padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: hsl(260 25% 6%);
+  border-top: 1px solid hsl(260 20% 14%);
 }
 
 .chat-widget-textarea {
   width: 100%;
   flex: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: hsl(260 20% 12%);
+  border: 1px solid hsl(260 20% 18%);
   border-radius: 12px;
   padding: 10px 14px;
   color: white;
   font-size: 14px;
   resize: none;
   outline: none;
-  transition: all var(--transition-fast) var(--easing-smooth);
+  transition: all 0.2s ease;
 }
 
 .chat-widget-textarea:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--axial-accent);
-  box-shadow: 0 0 0 2px rgba(0, 194, 178, 0.2);
+  background: hsl(260 20% 14%);
+  border-color: hsl(242 88% 72%);
+  box-shadow: 0 0 0 2px rgba(121, 118, 247, 0.2);
 }
 
 .chat-widget-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: hsl(250 20% 50%);
 }
 
 .chat-widget-send-btn {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--axial-accent), var(--accent));
+  background: linear-gradient(135deg, hsl(242 88% 72%), hsl(261 79% 45%));
   border: none;
   cursor: pointer;
   display: flex;
@@ -572,12 +313,12 @@ body {
   justify-content: center;
   color: white;
   flex-shrink: 0;
-  transition: all var(--transition-fast) var(--easing-smooth);
+  transition: all 0.2s ease;
 }
 
 .chat-widget-send-btn:hover:not(:disabled) {
   transform: scale(1.05);
-  box-shadow: 0 5px 20px rgba(0, 194, 178, 0.4);
+  box-shadow: 0 5px 20px rgba(121, 118, 247, 0.4);
 }
 
 .chat-widget-send-btn:disabled {
@@ -585,48 +326,52 @@ body {
   cursor: not-allowed;
 }
 
+/* Typing indicator */
+.typing-indicator {
+  @apply flex space-x-1.5 items-center;
+}
+
+.typing-dot {
+  @apply w-2 h-2 rounded-full;
+  background: linear-gradient(135deg, hsl(242 88% 72%), hsl(261 79% 45%));
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
 /* ============================================
-   ANALYSIS GRID STYLES
+   SCROLLBAR STYLES
    ============================================ */
 
-.analysis-grid {
-  display: grid;
-  gap: 1.5rem;
+::-webkit-scrollbar {
+  width: 6px;
 }
 
-@media (min-width: 640px) {
-  .analysis-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+::-webkit-scrollbar-track {
+  background: hsl(260 20% 10%);
+  border-radius: 3px;
 }
 
-@media (min-width: 1024px) {
-  .analysis-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, hsl(242 88% 72%), hsl(261 79% 45%));
+  border-radius: 3px;
 }
 
-.analysis-card {
-  @apply glass-card cursor-pointer;
-  position: relative;
-  overflow: hidden;
-}
-
-.analysis-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--axial-accent), var(--accent));
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--transition-normal) var(--easing-smooth);
-}
-
-.analysis-card:hover::before {
-  transform: scaleX(1);
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(242 88% 72%);
 }
 
 /* ============================================
@@ -634,10 +379,6 @@ body {
    ============================================ */
 
 @media (max-width: 768px) {
-  .glass-card {
-    @apply p-4;
-  }
-  
   .chat-widget-popup {
     width: calc(100vw - 32px);
     right: 16px;
@@ -645,7 +386,7 @@ body {
     height: calc(100vh - 120px);
     max-height: none;
   }
-  
+
   .chat-widget-button {
     bottom: 16px;
     right: 16px;
@@ -664,10 +405,40 @@ body {
   }
 }
 
-/* Dark mode improvements */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --glass-bg: rgba(0, 0, 0, 0.25);
-    --glass-border: rgba(255, 255, 255, 0.1);
-  }
+/* ============================================
+   LEGACY COMPATIBILITY (for existing components)
+   ============================================ */
+
+/* Glass card - mapped to new card system */
+.glass-card {
+  @apply rounded-2xl p-6 bg-card border border-border;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  @apply bg-card-hover;
+  transform: translateY(-2px);
+}
+
+/* Glass input - mapped to new input system */
+.glass-input {
+  @apply rounded-xl px-4 py-3 bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring;
+  transition: all 0.2s ease;
+}
+
+/* Primary button */
+.primary-button {
+  @apply rounded-xl px-6 py-3 font-medium text-primary-foreground bg-primary;
+  transition: all 0.3s ease;
+}
+
+.primary-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(121, 118, 247, 0.3);
+}
+
+/* Glass button */
+.glass-button {
+  @apply rounded-xl px-4 py-2 bg-secondary/50 border border-border text-foreground hover:bg-secondary;
+  transition: all 0.2s ease;
 }

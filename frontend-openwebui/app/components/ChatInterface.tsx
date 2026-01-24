@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Bot, User, Sparkles, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { toast } from 'react-hot-toast'
+import { toast } from 'sonner'
+import { Button } from './ui/button'
 
 interface Message {
   id: string
@@ -203,12 +204,14 @@ export default function ChatInterface() {
                           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {message.type === 'assistant' && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => copyMessage(message.content)}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
+                            className="h-6 w-6 hover:bg-white/10"
                           >
                             <Copy className="w-3 h-3 text-gray-400" />
-                          </button>
+                          </Button>
                         )}
                       </div>
                     )}

@@ -7,6 +7,36 @@ import os
 import httpx
 from loguru import logger
 import io
+from datetime import datetime
+
+# Auth imports - Using Supabase Auth
+from app.supabase_auth import (
+    SupabaseUser, UserLogin, UserRegister, TokenResponse, UserResponse,
+    PasswordResetRequest, PasswordResetConfirm, PasswordChange, ProfileUpdate,
+    get_current_user_supabase, get_current_admin_supabase,
+    login_user, register_user, logout_user, refresh_session,
+    request_password_reset, reset_password, change_password, update_profile,
+    list_users, toggle_user_active,
+)
+
+# Legacy imports for database models and utility functions
+from app.auth import (
+    User, Invitation, PasswordResetToken, ActivityLog,
+    InvitationCreate, InvitationResponse,
+    PasswordResetTokenResponse,
+    ActivityLogResponse, DashboardStats, DashboardCharts, ActivityChartData, ReportTypeStats,
+    get_db, init_db, log_activity, create_invitation,
+    create_password_reset_token, validate_reset_token,
+    get_password_hash, validate_invitation, create_user, UserCreate,
+    create_access_token,  # Required for memory service proxy endpoints
+)
+from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, Date
+from datetime import timedelta
+
+# Alias for compatibility - use Supabase user throughout
+get_current_user = get_current_user_supabase
+get_current_admin = get_current_admin_supabase
 
 # Pydantic models for all analysis types
 class SearchPayload(BaseModel):
@@ -51,6 +81,8 @@ def get_service_urls():
         "rag": os.environ.get("RAG_URL", "http://rag-service:8003"),
         "report": os.environ.get("REPORT_URL", "http://report-service:8004"),
         "status": os.environ.get("STATUS_URL", "http://status-service:8005"),
+        "scheduler": os.environ.get("SCHEDULER_URL", "http://scheduler-service:8006"),
+        "memory": os.environ.get("MEMORY_SERVICE_URL", "http://memory-service:8008"),
     }
 
 app = FastAPI(
@@ -89,6 +121,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize auth database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables and default admin"""
+    init_db()
+    logger.info("Auth database initialized")
+
 async def call_service(method: str, url: str, **kwargs):
     """Helper function to call microservices with error handling"""
     try:
@@ -102,6 +141,11 @@ async def call_service(method: str, url: str, **kwargs):
     except Exception as e:
         logger.error(f"Error calling {url}: {e}")
         raise HTTPException(status_code=500, detail=f"Service error: {str(e)}")
+
+
+def is_admin(user: User) -> bool:
+    """Check if user has admin role"""
+    return user.role == "admin"
 
 
 # =============================================================================
@@ -205,8 +249,21 @@ async def document_stats(urls: dict = Depends(get_service_urls)):
 # =============================================================================
 
 @app.post("/search", tags=["Search"])
-async def search(payload: SearchPayload, urls: dict = Depends(get_service_urls)):
+async def search(
+    payload: SearchPayload, 
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Semantic search across document content"""
+    # Log activity
+    log_activity(
+        db, 
+        action="search", 
+        user_id=current_user.id,
+        details=payload.query[:200] if payload.query else None
+    )
+    
     response = await call_service("POST", f"{urls['vector']}/search", json=payload.dict())
     return response.json()
 
@@ -301,31 +358,48 @@ async def get_analysis_types(urls: dict = Depends(get_service_urls)):
 async def list_reports(
     skip: int = Query(0, description="Number of reports to skip"),
     limit: int = Query(100, description="Maximum number of reports to return"),
-    urls: dict = Depends(get_service_urls)
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
 ):
     """List all reports with pagination"""
-    response = await call_service("GET", f"{urls['report']}/reports?skip={skip}&limit={limit}")
+    user_filter = "" if is_admin(current_user) else f"&user_id={current_user.id}"
+    response = await call_service("GET", f"{urls['report']}/reports?skip={skip}&limit={limit}{user_filter}")
     return response.json()
 
 @app.get("/reports/{report_id}", tags=["Reports"])
-async def get_report(report_id: int, urls: dict = Depends(get_service_urls)):
+async def get_report(
+    report_id: int,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
     """Get detailed report information"""
-    response = await call_service("GET", f"{urls['report']}/reports/{report_id}")
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("GET", f"{urls['report']}/reports/{report_id}{user_param}")
     return response.json()
 
 @app.delete("/reports/{report_id}", tags=["Reports"])
-async def delete_report(report_id: int, urls: dict = Depends(get_service_urls)):
+async def delete_report(
+    report_id: int,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
     """Delete a report"""
-    response = await call_service("DELETE", f"{urls['report']}/reports/{report_id}")
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("DELETE", f"{urls['report']}/reports/{report_id}{user_param}")
     return response.json()
 
 @app.get("/reports/{report_id}/export", tags=["Reports"])
-async def export_report_pdf(report_id: int, urls: dict = Depends(get_service_urls)):
+async def export_report_pdf(
+    report_id: int,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
     """Export report as professional PDF"""
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
     async with httpx.AsyncClient(timeout=300.0) as client:
-        response = await client.get(f"{urls['report']}/export/{report_id}")
+        response = await client.get(f"{urls['report']}/export/{report_id}{user_param}")
         response.raise_for_status()
-        
+
         return StreamingResponse(
             io.BytesIO(response.content),
             media_type="application/pdf",
@@ -337,16 +411,32 @@ async def generate_report(
     title: str,
     content: str,
     analysis_type: Optional[str] = None,
-    urls: dict = Depends(get_service_urls)
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Generate and store a new report"""
     payload = {
+        "user_id": current_user.id,
         "title": title,
         "content": content,
         "analysis_type": analysis_type
     }
     response = await call_service("POST", f"{urls['report']}/generate", json=payload)
-    return response.json()
+    result = response.json()
+    
+    # Log activity
+    report_id = result.get("id") if isinstance(result, dict) else None
+    log_activity(
+        db, 
+        action="report_created", 
+        user_id=current_user.id,
+        resource_type=analysis_type or "general",
+        resource_id=report_id,
+        details=title[:200] if title else None
+    )
+    
+    return result
 
 @app.get("/reports/stats", tags=["Reports"])
 async def report_stats(urls: dict = Depends(get_service_urls)):
@@ -375,6 +465,191 @@ async def legacy_download_report(report_id: int, urls: dict = Depends(get_servic
     return await get_report(report_id, urls)
 
 # =============================================================================
+# WATCH ENDPOINTS - AUTOMATED MONITORING
+# =============================================================================
+
+@app.get("/watches/presets", tags=["Watches"])
+async def get_watch_presets(urls: dict = Depends(get_service_urls)):
+    """Get available cron expression presets for scheduling watches"""
+    response = await call_service("GET", f"{urls['scheduler']}/presets")
+    return response.json()
+
+
+@app.get("/watches", tags=["Watches"])
+async def list_watches(
+    active_only: bool = False,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
+    """List all watch configurations"""
+    # Admin sees all, regular users see only their own
+    user_filter = "" if is_admin(current_user) else f"&user_id={current_user.id}"
+    response = await call_service("GET", f"{urls['scheduler']}/watches?active_only={active_only}{user_filter}")
+    return response.json()
+
+
+@app.post("/watches", tags=["Watches"])
+async def create_watch(
+    name: str,
+    topic: str,
+    cron_expression: str,
+    email_recipients: List[str],
+    sector: str = "general",
+    report_type: str = "synthese_executive",
+    keywords: List[str] = [],
+    sources_preference: str = "all",
+    is_active: bool = True,
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new automated watch"""
+    payload = {
+        "user_id": current_user.id,  # Watches always owned by creator
+        "name": name,
+        "topic": topic,
+        "sector": sector,
+        "report_type": report_type,
+        "keywords": keywords,
+        "sources_preference": sources_preference,
+        "cron_expression": cron_expression,
+        "email_recipients": email_recipients,
+        "is_active": is_active
+    }
+    response = await call_service("POST", f"{urls['scheduler']}/watches", json=payload)
+    result = response.json()
+    
+    # Log activity
+    watch_id = result.get("id") if isinstance(result, dict) else None
+    log_activity(
+        db,
+        action="watch_created",
+        user_id=current_user.id,
+        resource_type="watch",
+        resource_id=watch_id,
+        details=f"{name}: {topic}"[:200]
+    )
+    
+    return result
+
+
+@app.get("/watches/{watch_id}", tags=["Watches"])
+async def get_watch(
+    watch_id: int,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific watch configuration"""
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("GET", f"{urls['scheduler']}/watches/{watch_id}{user_param}")
+    return response.json()
+
+
+@app.put("/watches/{watch_id}", tags=["Watches"])
+async def update_watch(
+    watch_id: int,
+    name: Optional[str] = None,
+    topic: Optional[str] = None,
+    sector: Optional[str] = None,
+    report_type: Optional[str] = None,
+    keywords: Optional[List[str]] = None,
+    sources_preference: Optional[str] = None,
+    cron_expression: Optional[str] = None,
+    email_recipients: Optional[List[str]] = None,
+    is_active: Optional[bool] = None,
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an existing watch"""
+    payload = {}
+    if name is not None: payload["name"] = name
+    if topic is not None: payload["topic"] = topic
+    if sector is not None: payload["sector"] = sector
+    if report_type is not None: payload["report_type"] = report_type
+    if keywords is not None: payload["keywords"] = keywords
+    if sources_preference is not None: payload["sources_preference"] = sources_preference
+    if cron_expression is not None: payload["cron_expression"] = cron_expression
+    if email_recipients is not None: payload["email_recipients"] = email_recipients
+    if is_active is not None: payload["is_active"] = is_active
+
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("PUT", f"{urls['scheduler']}/watches/{watch_id}{user_param}", json=payload)
+    result = response.json()
+    
+    # Log activity
+    log_activity(
+        db,
+        action="watch_updated",
+        user_id=current_user.id,
+        resource_type="watch",
+        resource_id=watch_id,
+        details=f"Updated watch {watch_id}"
+    )
+    
+    return result
+
+
+@app.delete("/watches/{watch_id}", tags=["Watches"])
+async def delete_watch(
+    watch_id: int,
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a watch"""
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("DELETE", f"{urls['scheduler']}/watches/{watch_id}{user_param}")
+    
+    # Log activity
+    log_activity(
+        db,
+        action="watch_deleted",
+        user_id=current_user.id,
+        resource_type="watch",
+        resource_id=watch_id
+    )
+    
+    return response.json()
+
+
+@app.post("/watches/{watch_id}/trigger", tags=["Watches"])
+async def trigger_watch(
+    watch_id: int,
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually trigger a watch execution"""
+    user_param = "" if is_admin(current_user) else f"?user_id={current_user.id}"
+    response = await call_service("POST", f"{urls['scheduler']}/watches/{watch_id}/trigger{user_param}")
+    
+    # Log activity
+    log_activity(
+        db,
+        action="watch_triggered",
+        user_id=current_user.id,
+        resource_type="watch",
+        resource_id=watch_id
+    )
+    
+    return response.json()
+
+
+@app.get("/watches/{watch_id}/history", tags=["Watches"])
+async def get_watch_history(
+    watch_id: int,
+    limit: int = 10,
+    urls: dict = Depends(get_service_urls),
+    current_user: User = Depends(get_current_user)
+):
+    """Get execution history for a watch"""
+    user_param = "" if is_admin(current_user) else f"&user_id={current_user.id}"
+    response = await call_service("GET", f"{urls['scheduler']}/watches/{watch_id}/history?limit={limit}{user_param}")
+    return response.json()
+
+
+# =============================================================================
 # WORKFLOW ENDPOINTS - COMMON PATTERNS
 # =============================================================================
 
@@ -384,7 +659,9 @@ async def analyze_and_report(
     query: str,
     title: str,
     auto_export: bool = False,
-    urls: dict = Depends(get_service_urls)
+    urls: dict = Depends(get_service_urls),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Complete workflow: Run analysis and automatically generate report
@@ -421,6 +698,17 @@ async def analyze_and_report(
     report_response = await call_service("POST", f"{urls['report']}/generate", json=report_payload)
     report_result = report_response.json()
     
+    # Log activity
+    report_id = report_result.get("id") if isinstance(report_result, dict) else None
+    log_activity(
+        db, 
+        action="report_created", 
+        user_id=current_user.id,
+        resource_type=analysis_type,
+        resource_id=report_id,
+        details=title[:200] if title else None
+    )
+    
     result = {
         "analysis": analysis_result,
         "report": report_result
@@ -432,5 +720,728 @@ async def analyze_and_report(
         result["export_url"] = export_url
     
     return result
+
+
+# =============================================================================
+# AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+@app.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
+async def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    """
+    Authenticate user via Supabase Auth and return JWT token
+    """
+    return await login_user(credentials, db)
+
+
+@app.post("/auth/register", response_model=TokenResponse, tags=["Authentication"])
+async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+    """
+    Register new user via Supabase Auth with invitation code
+    """
+    return await register_user(user_data, db)
+
+
+@app.get("/auth/me", response_model=UserResponse, tags=["Authentication"])
+async def get_me(current_user: SupabaseUser = Depends(get_current_user)):
+    """
+    Get current authenticated user info
+    """
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at
+    )
+
+
+# =============================================================================
+# ADMIN ENDPOINTS
+# =============================================================================
+
+@app.post("/admin/invite", response_model=InvitationResponse, tags=["Admin"])
+async def create_invite(
+    data: InvitationCreate,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new invitation (admin only)
+    """
+    invitation = create_invitation(db, current_user, data)
+    return InvitationResponse.model_validate(invitation)
+
+
+@app.get("/admin/invitations", response_model=List[InvitationResponse], tags=["Admin"])
+async def list_invitations(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    List all invitations (admin only)
+    """
+    invitations = db.query(Invitation).order_by(Invitation.created_at.desc()).all()
+    return [InvitationResponse.model_validate(inv) for inv in invitations]
+
+
+@app.get("/admin/users", response_model=List[UserResponse], tags=["Admin"])
+async def list_users(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    List all users (admin only)
+    """
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [UserResponse.model_validate(u) for u in users]
+
+
+@app.patch("/admin/users/{user_id}/toggle-active", response_model=UserResponse, tags=["Admin"])
+async def toggle_user_active(
+    user_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Toggle user active status (admin only)
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Impossible de désactiver votre propre compte")
+    
+    user.is_active = not user.is_active
+    db.commit()
+    db.refresh(user)
+    
+    return UserResponse.model_validate(user)
+
+
+@app.get("/admin/password-resets", response_model=List[PasswordResetTokenResponse], tags=["Admin"])
+async def list_password_resets(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    List all password reset requests (admin only)
+    """
+    tokens = db.query(PasswordResetToken).order_by(PasswordResetToken.created_at.desc()).limit(50).all()
+    result = []
+    for t in tokens:
+        response = PasswordResetTokenResponse.model_validate(t)
+        # Show token to admin for pending requests
+        if not t.used_at and t.expires_at > datetime.utcnow():
+            response.token = t.token
+        result.append(response)
+    return result
+
+
+@app.patch("/admin/users/{user_id}/reset-password", tags=["Admin"])
+async def admin_reset_user_password(
+    user_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin force reset a user's password and return the reset token
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    reset_token = create_password_reset_token(db, user.email)
+    if not reset_token:
+        raise HTTPException(status_code=400, detail="Impossible de créer le token")
+    
+    return {
+        "message": "Token de réinitialisation créé",
+        "token": reset_token.token,
+        "expires_at": reset_token.expires_at,
+        "reset_url": f"/reset-password?token={reset_token.token}"
+    }
+
+
+# =============================================================================
+# PASSWORD MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.post("/auth/forgot-password", tags=["Authentication"])
+async def forgot_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
+    """
+    Request a password reset. Creates a token that can be used to reset the password.
+    For security, always returns success even if email doesn't exist.
+    """
+    reset_token = create_password_reset_token(db, data.email)
+    
+    # In production, you would send an email here
+    # For now, we just return a success message
+    # The admin can see pending reset requests in the admin panel
+    
+    return {
+        "message": "Si cet email existe, un lien de réinitialisation a été créé.",
+        "info": "Contactez un administrateur pour obtenir votre lien de réinitialisation."
+    }
+
+
+@app.post("/auth/reset-password", tags=["Authentication"])
+async def do_reset_password(data: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """
+    Reset password using a valid token
+    """
+    if len(data.new_password) < 6:
+        raise HTTPException(
+            status_code=400, 
+            detail="Le mot de passe doit contenir au moins 6 caractères"
+        )
+    
+    success = reset_password(db, data.token, data.new_password)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Token invalide ou expiré"
+        )
+    
+    return {"message": "Mot de passe réinitialisé avec succès"}
+
+
+@app.get("/auth/validate-reset-token", tags=["Authentication"])
+async def check_reset_token(token: str, db: Session = Depends(get_db)):
+    """
+    Validate a reset token before showing the reset form
+    """
+    reset_token = validate_reset_token(db, token)
+    if not reset_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Token invalide ou expiré"
+        )
+    
+    return {
+        "valid": True,
+        "email": reset_token.email
+    }
+
+
+@app.post("/auth/change-password", tags=["Authentication"])
+async def do_change_password(
+    data: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Change password for authenticated user (requires current password)
+    """
+    if len(data.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe doit contenir au moins 6 caractères"
+        )
+    
+    success = change_password(db, current_user, data.current_password, data.new_password)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Mot de passe actuel incorrect"
+        )
+    
+    return {"message": "Mot de passe modifié avec succès"}
+
+
+@app.patch("/auth/profile", response_model=UserResponse, tags=["Authentication"])
+async def update_profile(
+    full_name: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update user profile information
+    """
+    if full_name is not None:
+        current_user.full_name = full_name
+        db.commit()
+        db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
+
+
+# =============================================================================
+# ADMIN DASHBOARD ENDPOINTS
+# =============================================================================
+
+@app.get("/admin/dashboard/stats", response_model=DashboardStats, tags=["Admin Dashboard"])
+async def get_dashboard_stats(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get dashboard statistics for admin
+    """
+    today = datetime.utcnow().date()
+    week_ago = today - timedelta(days=7)
+    
+    # Parse dates if provided
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            start = week_ago
+    else:
+        start = week_ago
+    
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            end = today
+    else:
+        end = today
+    
+    # Total users
+    total_users = db.query(User).count()
+    active_users = db.query(User).filter(User.is_active == True).count()
+    
+    # Count activities
+    total_logins_today = db.query(ActivityLog).filter(
+        ActivityLog.action == "login",
+        cast(ActivityLog.created_at, Date) == today
+    ).count()
+    
+    total_logins_week = db.query(ActivityLog).filter(
+        ActivityLog.action == "login",
+        cast(ActivityLog.created_at, Date) >= week_ago
+    ).count()
+    
+    total_activities_today = db.query(ActivityLog).filter(
+        cast(ActivityLog.created_at, Date) == today
+    ).count()
+    
+    # Reports (from activity logs)
+    reports_today = db.query(ActivityLog).filter(
+        ActivityLog.action == "report_created",
+        cast(ActivityLog.created_at, Date) == today
+    ).count()
+    
+    reports_week = db.query(ActivityLog).filter(
+        ActivityLog.action == "report_created",
+        cast(ActivityLog.created_at, Date) >= week_ago
+    ).count()
+    
+    # Total reports from report service (approximate from logs)
+    total_reports = db.query(ActivityLog).filter(
+        ActivityLog.action == "report_created"
+    ).count()
+    
+    # Watch statistics
+    total_watches = db.query(ActivityLog).filter(
+        ActivityLog.action == "watch_created"
+    ).count()
+    
+    watches_created_week = db.query(ActivityLog).filter(
+        ActivityLog.action == "watch_created",
+        cast(ActivityLog.created_at, Date) >= week_ago
+    ).count()
+    
+    watches_triggered_week = db.query(ActivityLog).filter(
+        ActivityLog.action == "watch_triggered",
+        cast(ActivityLog.created_at, Date) >= week_ago
+    ).count()
+    
+    return DashboardStats(
+        total_users=total_users,
+        active_users=active_users,
+        total_reports=total_reports,
+        total_logins_today=total_logins_today,
+        total_logins_week=total_logins_week,
+        total_activities_today=total_activities_today,
+        reports_today=reports_today,
+        reports_week=reports_week,
+        total_watches=total_watches,
+        watches_created_week=watches_created_week,
+        watches_triggered_week=watches_triggered_week
+    )
+
+
+@app.get("/admin/dashboard/activities", response_model=List[ActivityLogResponse], tags=["Admin Dashboard"])
+async def get_dashboard_activities(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    action: Optional[str] = Query(None, description="Filter by action type"),
+    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    skip: int = Query(0, description="Number of records to skip"),
+    limit: int = Query(50, description="Maximum number of records"),
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent activities for admin dashboard
+    """
+    query = db.query(ActivityLog)
+    
+    # Apply filters
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(ActivityLog.created_at >= start)
+        except ValueError:
+            pass
+    
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(ActivityLog.created_at < end)
+        except ValueError:
+            pass
+    
+    if action:
+        query = query.filter(ActivityLog.action == action)
+    
+    if user_id:
+        query = query.filter(ActivityLog.user_id == user_id)
+    
+    # Get activities
+    activities = query.order_by(ActivityLog.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Build response with user info
+    result = []
+    for activity in activities:
+        user_email = None
+        user_name = None
+        if activity.user_id:
+            user = db.query(User).filter(User.id == activity.user_id).first()
+            if user:
+                user_email = user.email
+                user_name = user.full_name
+        
+        result.append(ActivityLogResponse(
+            id=activity.id,
+            user_id=activity.user_id,
+            user_email=user_email,
+            user_name=user_name,
+            action=activity.action,
+            resource_type=activity.resource_type,
+            resource_id=activity.resource_id,
+            details=activity.details,
+            created_at=activity.created_at
+        ))
+    
+    return result
+
+
+@app.get("/admin/dashboard/charts", response_model=DashboardCharts, tags=["Admin Dashboard"])
+async def get_dashboard_charts(
+    days: int = Query(7, description="Number of days to include"),
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get chart data for admin dashboard
+    """
+    today = datetime.utcnow().date()
+    
+    # Activity by day
+    activity_by_day = []
+    for i in range(days - 1, -1, -1):
+        day = today - timedelta(days=i)
+        
+        logins = db.query(ActivityLog).filter(
+            ActivityLog.action == "login",
+            cast(ActivityLog.created_at, Date) == day
+        ).count()
+        
+        reports = db.query(ActivityLog).filter(
+            ActivityLog.action == "report_created",
+            cast(ActivityLog.created_at, Date) == day
+        ).count()
+        
+        chats = db.query(ActivityLog).filter(
+            ActivityLog.action == "chat_message",
+            cast(ActivityLog.created_at, Date) == day
+        ).count()
+        
+        searches = db.query(ActivityLog).filter(
+            ActivityLog.action == "search",
+            cast(ActivityLog.created_at, Date) == day
+        ).count()
+        
+        watches = db.query(ActivityLog).filter(
+            ActivityLog.action.in_(["watch_created", "watch_triggered", "watch_updated"]),
+            cast(ActivityLog.created_at, Date) == day
+        ).count()
+        
+        activity_by_day.append(ActivityChartData(
+            date=day.strftime("%Y-%m-%d"),
+            logins=logins,
+            reports=reports,
+            chats=chats,
+            searches=searches,
+            watches=watches
+        ))
+    
+    # Reports by type
+    report_types = db.query(
+        ActivityLog.resource_type,
+        func.count(ActivityLog.id)
+    ).filter(
+        ActivityLog.action == "report_created",
+        ActivityLog.resource_type != None
+    ).group_by(ActivityLog.resource_type).all()
+    
+    reports_by_type = [
+        ReportTypeStats(type=rt[0] or "Autre", count=rt[1])
+        for rt in report_types
+    ]
+    
+    # If no report types, add a placeholder
+    if not reports_by_type:
+        reports_by_type = [ReportTypeStats(type="Aucun rapport", count=0)]
+    
+    return DashboardCharts(
+        activity_by_day=activity_by_day,
+        reports_by_type=reports_by_type
+    )
+
+
+# ============================================================================
+# MEMORY SERVICE PROXY ENDPOINTS
+# ============================================================================
+
+@app.get("/api/memory/conversations")
+async def get_conversations(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    conversation_type: Optional[str] = Query(None),
+    analysis_type: Optional[str] = Query(None),
+    business_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to list user's conversations from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            params = {"skip": skip, "limit": limit}
+            if conversation_type:
+                params["conversation_type"] = conversation_type
+            if analysis_type:
+                params["analysis_type"] = analysis_type
+            if business_type:
+                params["business_type"] = business_type
+            if search:
+                params["search"] = search
+
+            response = await client.get(
+                f"{services['memory']}/api/v1/conversations",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching conversations from memory service: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch conversations")
+
+
+@app.get("/api/memory/conversations/{conversation_id}")
+async def get_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to get a specific conversation from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{services['memory']}/api/v1/conversations/{conversation_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching conversation {conversation_id}: {e}")
+        if hasattr(e, 'response') and e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        raise HTTPException(status_code=500, detail="Failed to fetch conversation")
+
+
+@app.delete("/api/memory/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to delete a conversation from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{services['memory']}/api/v1/conversations/{conversation_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return {"status": "deleted"}
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error deleting conversation {conversation_id}: {e}")
+        if hasattr(e, 'response') and e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        raise HTTPException(status_code=500, detail="Failed to delete conversation")
+
+
+@app.get("/api/memory/documents")
+async def get_documents(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    document_type: Optional[str] = Query(None, alias="type"),
+    analysis_type: Optional[str] = Query(None),
+    business_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to list user's documents from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            params = {"skip": skip, "limit": limit}
+            if document_type:
+                params["type"] = document_type
+            if analysis_type:
+                params["analysis_type"] = analysis_type
+            if business_type:
+                params["business_type"] = business_type
+            if search:
+                params["search"] = search
+
+            response = await client.get(
+                f"{services['memory']}/api/v1/documents",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching documents from memory service: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch documents")
+
+
+@app.get("/api/memory/documents/{document_id}")
+async def get_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to get a specific document from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{services['memory']}/api/v1/documents/{document_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching document {document_id}: {e}")
+        if hasattr(e, 'response') and e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=500, detail="Failed to fetch document")
+
+
+@app.delete("/api/memory/documents/{document_id}")
+async def delete_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to delete a document from memory service
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{services['memory']}/api/v1/documents/{document_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return {"status": "deleted"}
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error deleting document {document_id}: {e}")
+        if hasattr(e, 'response') and e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=500, detail="Failed to delete document")
+
+
+@app.get("/api/memory/migrate/status")
+async def get_migration_status(current_user: User = Depends(get_current_user)):
+    """
+    Proxy endpoint to check migration status from legacy system
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{services['memory']}/api/v1/migrate/status",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching migration status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch migration status")
+
+
+@app.post("/api/memory/migrate")
+async def trigger_migration(current_user: User = Depends(get_current_user)):
+    """
+    Proxy endpoint to trigger migration from legacy system
+    """
+    services = get_service_urls()
+    token = create_access_token(data={"sub": str(current_user.id)})
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{services['memory']}/api/v1/migrate",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error triggering migration: {e}")
+        raise HTTPException(status_code=500, detail="Failed to trigger migration")
 
 

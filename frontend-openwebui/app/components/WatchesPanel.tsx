@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  Clock, 
-  Mail, 
-  Calendar, 
-  Play, 
-  Pause, 
-  Trash2, 
-  Plus, 
+import {
+  Clock,
+  Mail,
+  Calendar,
+  Play,
+  Pause,
+  Trash2,
+  Plus,
   Search,
   CheckCircle,
   XCircle,
@@ -21,6 +21,9 @@ import {
   RefreshCw,
   Edit
 } from 'lucide-react'
+import { useTranslation } from '../context/LanguageContext'
+import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { Button } from './ui/button'
 
 const SCHEDULER_URL = process.env.NEXT_PUBLIC_SCHEDULER_URL || 'http://localhost:8007'
 
@@ -57,28 +60,29 @@ interface CronPreset {
   description: string
 }
 
-// Report type options
-const reportTypes = [
-  { id: 'synthese_executive', name: 'Synthèse Exécutive' },
-  { id: 'analyse_concurrentielle', name: 'Analyse Concurrentielle' },
-  { id: 'veille_technologique', name: 'Veille Technologique' },
-  { id: 'analyse_risques', name: 'Analyse des Risques' },
-  { id: 'etude_marche', name: 'Étude de Marché' },
-  { id: 'analyse_approfondie', name: 'Analyse Approfondie (60 sources)' },
+// Report type IDs (names will be translated)
+const reportTypeIds = [
+  'synthese_executive',
+  'analyse_concurrentielle',
+  'veille_technologique',
+  'analyse_risques',
+  'analyse_reglementaire',
 ]
 
-// Sector options
-const sectors = [
-  { id: 'general', name: 'Général' },
-  { id: 'finance_banque', name: 'Finance & Banque' },
-  { id: 'tech_digital', name: 'Tech & Digital' },
-  { id: 'retail_commerce', name: 'Retail & Commerce' },
-  { id: 'industrie', name: 'Industrie' },
-  { id: 'sante', name: 'Santé' },
-  { id: 'energie', name: 'Énergie' },
+// Sector IDs (names will be translated)
+const sectorIds = [
+  'general',
+  'finance_banque',
+  'tech_digital',
+  'retail_commerce',
+  'industrie',
+  'sante',
+  'energie',
 ]
 
 export default function WatchesPanel() {
+  const { t } = useTranslation()
+  const { user } = useSupabaseAuth()
   const [watches, setWatches] = useState<Watch[]>([])
   const [presets, setPresets] = useState<CronPreset[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,6 +112,10 @@ export default function WatchesPanel() {
     month: '*',
     dayOfWeek: '1',
   })
+  
+  // Frequency type for agenda-style selector
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('weekly')
+  const [selectedDays, setSelectedDays] = useState<number[]>([1]) // 0=Sun, 1=Mon, etc.
 
   // Parse cron expression to parts
   const parseCronExpression = (cron: string) => {
@@ -143,21 +151,27 @@ export default function WatchesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cronParts.minute, cronParts.hour, cronParts.dayOfMonth, cronParts.month, cronParts.dayOfWeek])
 
-  // Fetch watches on mount
+  // Fetch watches on mount and when user changes
   useEffect(() => {
-    fetchWatches()
-    fetchPresets()
-  }, [])
+    if (user?.id) {
+      fetchWatches()
+      fetchPresets()
+    }
+  }, [user?.id])
 
   const fetchWatches = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`${SCHEDULER_URL}/watches`)
+      // Pass user_id to filter watches by current user (Supabase UUID)
+      const url = user?.id
+        ? `${SCHEDULER_URL}/watches?user_id=${user.id}`
+        : `${SCHEDULER_URL}/watches`
+      const response = await fetch(url)
       if (!response.ok) throw new Error('Failed to fetch watches')
       const data = await response.json()
       setWatches(data)
     } catch (err) {
-      setError('Impossible de charger les veilles')
+      setError(t('watches.loadError'))
       console.error(err)
     } finally {
       setLoading(false)
@@ -208,10 +222,11 @@ export default function WatchesPanel() {
     try {
       const payload = {
         ...formData,
+        user_id: user?.id,  // Include Supabase UUID for user ownership
         keywords: formData.keywords.split(',').map(k => k.trim()).filter(k => k),
         email_recipients: formData.email_recipients.split(',').map(e => e.trim()).filter(e => e),
       }
-      
+
       const response = await fetch(`${SCHEDULER_URL}/watches`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -234,14 +249,15 @@ export default function WatchesPanel() {
 
   const updateWatch = async () => {
     if (!editingWatch) return
-    
+
     try {
       const payload = {
         ...formData,
+        user_id: user?.id,  // Include Supabase UUID for user ownership
         keywords: formData.keywords.split(',').map(k => k.trim()).filter(k => k),
         email_recipients: formData.email_recipients.split(',').map(e => e.trim()).filter(e => e),
       }
-      
+
       const response = await fetch(`${SCHEDULER_URL}/watches/${editingWatch.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -276,7 +292,7 @@ export default function WatchesPanel() {
   }
 
   const deleteWatch = async (watchId: number) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette veille ?')) return
+    if (!confirm(t('watches.deleteConfirm'))) return
     
     try {
       const response = await fetch(`${SCHEDULER_URL}/watches/${watchId}`, {
@@ -298,7 +314,7 @@ export default function WatchesPanel() {
       })
       if (response.ok) {
         setError(null)
-        alert('Veille déclenchée avec succès !')
+        alert(t('watches.triggerSuccess'))
       }
     } catch (err) {
       console.error('Failed to trigger watch:', err)
@@ -348,34 +364,16 @@ export default function WatchesPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Bell className="w-7 h-7 text-cyan-400" />
-            Veilles Automatisées
-          </h1>
-          <p className="text-gray-400 mt-1">
-            Configurez des rapports automatiques envoyés par email
-          </p>
-        </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={fetchWatches}
-            className="glass-button flex items-center gap-2 px-4 py-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Actualiser
-          </button>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="primary-button flex items-center gap-2 px-4 py-2"
-          >
-            <Plus className="w-4 h-4" />
-            Nouvelle veille
-          </button>
-        </div>
+      {/* Actions bar */}
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" onClick={fetchWatches}>
+          <RefreshCw className="w-4 h-4" />
+          {t('common.refresh')}
+        </Button>
+        <Button onClick={() => setShowCreateForm(true)}>
+          <Plus className="w-4 h-4" />
+          {t('watches.newWatch')}
+        </Button>
       </div>
 
       {/* Error message */}
@@ -386,9 +384,9 @@ export default function WatchesPanel() {
           className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 text-red-400"
         >
           {error}
-          <button onClick={() => setError(null)} className="ml-4 underline">
-            Fermer
-          </button>
+          <Button variant="link" onClick={() => setError(null)} className="ml-4">
+            {t('common.close')}
+          </Button>
         </motion.div>
       )}
 
@@ -413,12 +411,12 @@ export default function WatchesPanel() {
                 {editingWatch ? (
                   <>
                     <Edit className="w-5 h-5 text-cyan-400" />
-                    Modifier la veille
+                    {t('watches.editWatch')}
                   </>
                 ) : (
                   <>
                     <Plus className="w-5 h-5 text-cyan-400" />
-                    Créer une nouvelle veille
+                    {t('watches.createNewWatch')}
                   </>
                 )}
               </h2>
@@ -427,28 +425,28 @@ export default function WatchesPanel() {
                 {/* Name */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Nom de la veille *
+                    {t('watches.watchName')}
                   </label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                     className="glass-input w-full"
-                    placeholder="Ex: Veille secteur bancaire"
+                    placeholder={t('watches.watchNamePlaceholder')}
                   />
                 </div>
 
                 {/* Topic */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Sujet à analyser *
+                    {t('watches.topicToAnalyze')}
                   </label>
                   <input
                     type="text"
                     value={formData.topic}
                     onChange={e => setFormData({ ...formData, topic: e.target.value })}
                     className="glass-input w-full"
-                    placeholder="Ex: Évolution des taux d'intérêt en Europe"
+                    placeholder={t('watches.topicPlaceholder')}
                   />
                 </div>
 
@@ -456,29 +454,29 @@ export default function WatchesPanel() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Secteur
+                      {t('watches.sector')}
                     </label>
                     <select
                       value={formData.sector}
                       onChange={e => setFormData({ ...formData, sector: e.target.value })}
                       className="glass-input w-full"
                     >
-                      {sectors.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
+                      {sectorIds.map(id => (
+                        <option key={id} value={id}>{t(`watches.sectors.${id}`)}</option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Type de rapport
+                      {t('watches.reportType')}
                     </label>
                     <select
                       value={formData.report_type}
                       onChange={e => setFormData({ ...formData, report_type: e.target.value })}
                       className="glass-input w-full"
                     >
-                      {reportTypes.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
+                      {reportTypeIds.map(id => (
+                        <option key={id} value={id}>{t(`analysis.types.${id}`)}</option>
                       ))}
                     </select>
                   </div>
@@ -487,197 +485,249 @@ export default function WatchesPanel() {
                 {/* Keywords */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Mots-clés (séparés par des virgules)
+                    {t('watches.keywords')}
                   </label>
                   <input
                     type="text"
                     value={formData.keywords}
                     onChange={e => setFormData({ ...formData, keywords: e.target.value })}
                     className="glass-input w-full"
-                    placeholder="Ex: taux, BCE, inflation, crédit"
+                    placeholder={t('watches.keywordsPlaceholder')}
                   />
                 </div>
 
-                {/* Schedule */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Fréquence d'exécution
+                {/* Schedule - Agenda style */}
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-gray-300">
+                    {t('watches.executionFrequency')}
                   </label>
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    {presets.map(preset => (
-                      <button
-                        key={preset.id}
+                  
+                  {/* Frequency type selector */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { id: 'daily', label: t('watches.frequencyDaily'), icon: '1' },
+                      { id: 'weekly', label: t('watches.frequencyWeekly'), icon: '7' },
+                      { id: 'monthly', label: t('watches.frequencyMonthly'), icon: '30' },
+                      { id: 'custom', label: t('watches.frequencyCustom'), icon: '*' },
+                    ].map(freq => (
+                      <Button
+                        key={freq.id}
                         type="button"
+                        variant="outline"
                         onClick={() => {
-                          const parts = parseCronExpression(preset.cron)
-                          setCronParts(parts)
-                          setFormData({ ...formData, cron_expression: preset.cron })
+                          setFrequencyType(freq.id as any)
+                          // Set default cron based on frequency
+                          if (freq.id === 'daily') {
+                            setCronParts({ ...cronParts, dayOfWeek: '*', dayOfMonth: '*' })
+                            setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} * * *` })
+                          } else if (freq.id === 'weekly') {
+                            setCronParts({ ...cronParts, dayOfMonth: '*', dayOfWeek: '1' })
+                            setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} * * 1` })
+                          } else if (freq.id === 'monthly') {
+                            setCronParts({ ...cronParts, dayOfWeek: '*', dayOfMonth: '1' })
+                            setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} 1 * *` })
+                          }
                         }}
-                        className={`glass-button text-sm py-2 px-3 ${
-                          formData.cron_expression === preset.cron 
-                            ? 'bg-cyan-500/20 border-cyan-500/50' 
-                            : ''
+                        className={`flex flex-col items-center gap-1 p-3 h-auto rounded-xl transition-all duration-200 ${
+                          frequencyType === freq.id
+                            ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                            : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:border-white/20'
                         }`}
                       >
-                        {preset.name}
-                      </button>
+                        <span className="text-lg font-bold">{freq.icon}</span>
+                        <span className="text-xs">{freq.label}</span>
+                      </Button>
                     ))}
                   </div>
                   
-                  {/* Custom schedule with dropdowns */}
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Minute */}
+                  {/* Execution time */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">
-                          Minute
+                    <label className="block text-xs font-medium text-gray-400 mb-2">
+                      {t('watches.executionTime')}
                         </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={cronParts.hour}
+                        onChange={e => {
+                          setCronParts({ ...cronParts, hour: e.target.value })
+                        }}
+                        className="glass-input w-24 text-sm text-center"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i.toString()}>
+                            {i.toString().padStart(2, '0')}h
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-gray-500">:</span>
                         <select
                           value={cronParts.minute}
                           onChange={e => setCronParts({ ...cronParts, minute: e.target.value })}
-                          className="glass-input w-full text-sm"
+                        className="glass-input w-24 text-sm text-center"
                         >
-                          {Array.from({ length: 60 }, (_, i) => (
-                            <option key={i} value={i.toString()}>
-                              {i.toString().padStart(2, '0')}
+                        {[0, 15, 30, 45].map(m => (
+                          <option key={m} value={m.toString()}>
+                            {m.toString().padStart(2, '0')}
                             </option>
                           ))}
                         </select>
+                    </div>
                       </div>
 
-                      {/* Hour */}
+                  {/* Weekly day selector */}
+                  {frequencyType === 'weekly' && (
                       <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">
-                          Heure
-                        </label>
-                        <select
-                          value={cronParts.hour}
-                          onChange={e => {
-                            const selectedHour = e.target.value
-                            setCronParts({ ...cronParts, hour: selectedHour })
-                          }}
-                          className="glass-input w-full text-sm"
-                        >
-                          {Array.from({ length: 24 }, (_, i) => {
-                            const hourValue = i.toString()
-                            const hourDisplay = i.toString().padStart(2, '0')
-                            return (
-                              <option key={i} value={hourValue}>
-                                {hourDisplay}h
-                              </option>
-                            )
-                          })}
-                        </select>
+                      <label className="block text-xs font-medium text-gray-400 mb-2">
+                        {t('watches.selectDays')}
+                      </label>
+                      <div className="flex gap-2">
+                        {[
+                          { value: '1', label: 'L' },
+                          { value: '2', label: 'M' },
+                          { value: '3', label: 'M' },
+                          { value: '4', label: 'J' },
+                          { value: '5', label: 'V' },
+                          { value: '6', label: 'S' },
+                          { value: '0', label: 'D' },
+                        ].map(day => (
+                          <Button
+                            key={day.value}
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => {
+                              const newValue = day.value
+                              setCronParts({ ...cronParts, dayOfWeek: newValue })
+                              setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} * * ${newValue}` })
+                            }}
+                            className={`w-10 h-10 rounded-lg text-sm font-medium transition-all duration-200 ${
+                              cronParts.dayOfWeek === day.value
+                                ? 'bg-cyan-500/30 border-cyan-500/50 text-cyan-400'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                            }`}
+                          >
+                            {day.label}
+                          </Button>
+                        ))}
                       </div>
                     </div>
+                  )}
+                  
+                  {/* Monthly day selector */}
+                  {frequencyType === 'monthly' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-400 mb-2">
+                        {t('watches.selectDayOfMonth')}
+                        </label>
+                        <select
+                        value={cronParts.dayOfMonth}
+                          onChange={e => {
+                          setCronParts({ ...cronParts, dayOfMonth: e.target.value })
+                          setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} ${e.target.value} * *` })
+                          }}
+                        className="glass-input w-32 text-sm"
+                        >
+                        {Array.from({ length: 28 }, (_, i) => (
+                          <option key={i + 1} value={(i + 1).toString()}>
+                            {i + 1}
+                              </option>
+                        ))}
+                        </select>
+                      </div>
+                  )}
 
+                  {/* Custom cron (advanced) */}
+                  {frequencyType === 'custom' && (
+                    <div className="space-y-3 p-3 rounded-lg bg-white/5 border border-white/10">
                     <div className="grid grid-cols-3 gap-3">
-                      {/* Day of Week */}
                       <div>
                         <label className="block text-xs font-medium text-gray-400 mb-1">
-                          Jour de la semaine
+                            {t('watches.dayOfWeek')}
                         </label>
                         <select
                           value={cronParts.dayOfWeek}
                           onChange={e => setCronParts({ ...cronParts, dayOfWeek: e.target.value })}
                           className="glass-input w-full text-sm"
                         >
-                          <option value="*">Tous les jours</option>
-                          <option value="0">Dimanche</option>
-                          <option value="1">Lundi</option>
-                          <option value="2">Mardi</option>
-                          <option value="3">Mercredi</option>
-                          <option value="4">Jeudi</option>
-                          <option value="5">Vendredi</option>
-                          <option value="6">Samedi</option>
+                            <option value="*">{t('watches.allDays')}</option>
+                            <option value="1-5">Lun-Ven</option>
+                            {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].map((day, i) => (
+                              <option key={i} value={i.toString()}>{day}</option>
+                            ))}
                         </select>
                       </div>
-
-                      {/* Day of Month */}
                       <div>
                         <label className="block text-xs font-medium text-gray-400 mb-1">
-                          Jour du mois
+                            {t('watches.dayOfMonth')}
                         </label>
                         <select
                           value={cronParts.dayOfMonth}
                           onChange={e => setCronParts({ ...cronParts, dayOfMonth: e.target.value })}
                           className="glass-input w-full text-sm"
                         >
-                          <option value="*">Tous les jours</option>
+                            <option value="*">{t('watches.allDays')}</option>
                           {Array.from({ length: 31 }, (_, i) => (
-                            <option key={i + 1} value={(i + 1).toString()}>
-                              {i + 1}
-                            </option>
+                              <option key={i + 1} value={(i + 1).toString()}>{i + 1}</option>
                           ))}
                         </select>
                       </div>
-
-                      {/* Month */}
                       <div>
                         <label className="block text-xs font-medium text-gray-400 mb-1">
-                          Mois
+                            {t('watches.month')}
                         </label>
                         <select
                           value={cronParts.month}
                           onChange={e => setCronParts({ ...cronParts, month: e.target.value })}
                           className="glass-input w-full text-sm"
                         >
-                          <option value="*">Tous les mois</option>
-                          <option value="1">Janvier</option>
-                          <option value="2">Février</option>
-                          <option value="3">Mars</option>
-                          <option value="4">Avril</option>
-                          <option value="5">Mai</option>
-                          <option value="6">Juin</option>
-                          <option value="7">Juillet</option>
-                          <option value="8">Août</option>
-                          <option value="9">Septembre</option>
-                          <option value="10">Octobre</option>
-                          <option value="11">Novembre</option>
-                          <option value="12">Décembre</option>
+                            <option value="*">{t('watches.allMonths')}</option>
+                            {[
+                              'Jan', 'Fev', 'Mar', 'Avr', 'Mai', 'Juin',
+                              'Juil', 'Aou', 'Sep', 'Oct', 'Nov', 'Dec'
+                            ].map((month, i) => (
+                              <option key={i + 1} value={(i + 1).toString()}>{month}</option>
+                            ))}
                         </select>
                       </div>
                     </div>
-
-                    {/* Display cron expression */}
-                    <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700">
-                      <p className="text-xs text-gray-400 mb-1">Expression cron générée :</p>
+                      <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
+                        <p className="text-xs text-gray-400 mb-1">{t('watches.cronGenerated')}</p>
                       <code className="text-xs font-mono text-cyan-400">
                         {formData.cron_expression}
                       </code>
                     </div>
                   </div>
+                  )}
                 </div>
 
                 {/* Email recipients */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Destinataires email * (séparés par des virgules)
+                    {t('watches.emailRecipients')}
                   </label>
                   <input
                     type="text"
                     value={formData.email_recipients}
                     onChange={e => setFormData({ ...formData, email_recipients: e.target.value })}
                     className="glass-input w-full"
-                    placeholder="Ex: john@company.com, jane@company.com"
+                    placeholder={t('watches.emailRecipientsPlaceholder')}
                   />
                 </div>
 
                 {/* Actions */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                  <button
+                <div className="flex justify-end gap-3 pt-5 border-t border-white/10">
+                  <Button
+                    variant="outline"
                     onClick={() => { setShowCreateForm(false); resetForm(); }}
-                    className="glass-button px-6 py-2"
                   >
-                    Annuler
-                  </button>
-                  <button
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
                     onClick={editingWatch ? updateWatch : createWatch}
                     disabled={!formData.name || !formData.topic || !formData.email_recipients}
-                    className="primary-button px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {editingWatch ? 'Enregistrer les modifications' : 'Créer la veille'}
-                  </button>
+                    {editingWatch ? t('watches.saveChanges') : t('watches.createWatch')}
+                  </Button>
                 </div>
               </div>
             </motion.div>
@@ -698,18 +748,18 @@ export default function WatchesPanel() {
         >
           <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-400 mb-2">
-            Aucune veille configurée
+            {t('watches.noWatches')}
           </h3>
           <p className="text-gray-500 mb-6">
-            Créez votre première veille automatisée pour recevoir des rapports par email
+            {t('watches.noWatchesDesc')}
           </p>
-          <button
+          <Button
             onClick={() => setShowCreateForm(true)}
-            className="primary-button inline-flex items-center gap-2 px-6 py-3"
+            size="lg"
           >
             <Plus className="w-5 h-5" />
-            Créer une veille
-          </button>
+            {t('watches.createWatch')}
+          </Button>
         </motion.div>
       ) : (
         <div className="grid gap-4">
@@ -719,7 +769,7 @@ export default function WatchesPanel() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              className="glass-card hover:border-cyan-500/30 transition-all"
+              className="p-5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-cyan-500/30 hover:bg-white/[0.05] transition-all duration-300"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -732,7 +782,7 @@ export default function WatchesPanel() {
                         ? 'bg-green-500/20 text-green-400 border-green-500/30'
                         : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
                     }`}>
-                      {watch.is_active ? 'Active' : 'Inactive'}
+                      {watch.is_active ? t('common.active') : t('common.inactive')}
                     </span>
                   </div>
                   
@@ -741,7 +791,7 @@ export default function WatchesPanel() {
                   <div className="flex flex-wrap gap-4 text-sm">
                     <div className="flex items-center gap-2 text-gray-500">
                       <Search className="w-4 h-4" />
-                      {reportTypes.find(r => r.id === watch.report_type)?.name || watch.report_type}
+                      {t(`analysis.types.${watch.report_type}`)}
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
                       <Clock className="w-4 h-4" />
@@ -749,12 +799,12 @@ export default function WatchesPanel() {
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
                       <Mail className="w-4 h-4" />
-                      {watch.email_recipients.length} destinataire(s)
+                      {watch.email_recipients.length} {t('watches.recipients')}
                     </div>
                     {watch.next_run && (
                       <div className="flex items-center gap-2 text-cyan-400">
                         <Calendar className="w-4 h-4" />
-                        Prochaine: {formatDate(watch.next_run)}
+                        {t('watches.nextRun')} {formatDate(watch.next_run)}
                       </div>
                     )}
                   </div>
@@ -773,52 +823,63 @@ export default function WatchesPanel() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => loadWatchForEdit(watch)}
-                    className="glass-button p-2 hover:bg-cyan-500/20"
                     title="Modifier"
+                    className="text-muted-foreground hover:text-primary"
                   >
                     <Edit className="w-4 h-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => triggerWatch(watch.id)}
-                    className="glass-button p-2 hover:bg-green-500/20"
-                    title="Exécuter maintenant"
+                    title="Executer maintenant"
+                    className="text-muted-foreground hover:text-green-400 hover:bg-green-500/10"
                   >
                     <Play className="w-4 h-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => toggleWatch(watch.id)}
-                    className={`glass-button p-2 ${
-                      watch.is_active ? 'hover:bg-yellow-500/20' : 'hover:bg-green-500/20'
-                    }`}
-                    title={watch.is_active ? 'Désactiver' : 'Activer'}
+                    title={watch.is_active ? 'Desactiver' : 'Activer'}
+                    className={watch.is_active
+                      ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10'
+                      : 'text-muted-foreground hover:text-green-400 hover:bg-green-500/10'
+                    }
                   >
                     {watch.is_active ? (
                       <Pause className="w-4 h-4" />
                     ) : (
                       <Play className="w-4 h-4" />
                     )}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => {
                       setSelectedWatch(watch)
                       setShowHistory(true)
                       fetchHistory(watch.id)
                     }}
-                    className="glass-button p-2 hover:bg-blue-500/20"
                     title="Historique"
+                    className="text-muted-foreground hover:text-blue-400 hover:bg-blue-500/10"
                   >
                     <History className="w-4 h-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => deleteWatch(watch.id)}
-                    className="glass-button p-2 hover:bg-red-500/20"
                     title="Supprimer"
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             </motion.div>
@@ -845,12 +906,12 @@ export default function WatchesPanel() {
             >
               <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
                 <History className="w-5 h-5 text-cyan-400" />
-                Historique - {selectedWatch.name}
+                {t('watches.history')} - {selectedWatch.name}
               </h2>
 
               {history.length === 0 ? (
                 <p className="text-gray-400 text-center py-8">
-                  Aucune exécution enregistrée
+                  {t('watches.noHistory')}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -896,12 +957,12 @@ export default function WatchesPanel() {
               )}
 
               <div className="flex justify-end pt-4 mt-4 border-t border-white/10">
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => setShowHistory(false)}
-                  className="glass-button px-6 py-2"
                 >
-                  Fermer
-                </button>
+                  {t('common.close')}
+                </Button>
               </div>
             </motion.div>
           </motion.div>

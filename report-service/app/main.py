@@ -1,8 +1,9 @@
 import os
 import json
+import requests
 from datetime import datetime
 from io import BytesIO
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -29,10 +30,117 @@ import re
 import ast
 
 
+# Fonction de détection de langue basée sur le contenu
+def detect_content_language(content: str) -> str:
+    """
+    Détecte si le contenu est en anglais ou en français.
+    Retourne 'en' pour anglais, 'fr' pour français.
+    """
+    if not content:
+        return 'fr'
+    
+    # Mots-clés anglais typiques dans les rapports
+    english_indicators = [
+        'the ', 'and ', 'of ', 'to ', 'in ', 'is ', 'for ', 'with ', 'that ', 'are ',
+        'analysis', 'market', 'business', 'strategy', 'recommendations', 'executive summary',
+        'key findings', 'conclusion', 'overview', 'trends', 'growth', 'sector'
+    ]
+    
+    # Mots-clés français typiques
+    french_indicators = [
+        ' le ', ' la ', ' les ', ' de ', ' du ', ' des ', ' et ', ' en ', ' un ', ' une ',
+        'analyse', 'marché', 'stratégie', 'recommandations', 'synthèse', 'conclusion',
+        'secteur', 'croissance', 'tendances', 'évolution'
+    ]
+    
+    content_lower = content.lower()
+    
+    english_score = sum(1 for word in english_indicators if word in content_lower)
+    french_score = sum(1 for word in french_indicators if word in content_lower)
+    
+    return 'en' if english_score > french_score else 'fr'
+
+
+# Traductions pour le PDF
+PDF_TRANSLATIONS = {
+    'fr': {
+        'footer': "Tous droits réservés.",
+        'analysis_type': "Type d'analyse",
+        'date': "Date",
+        'time': "Heure",
+        'sector': "Secteur",
+        'page': "Page"
+    },
+    'en': {
+        'footer': "All rights reserved.",
+        'analysis_type': "Analysis Type",
+        'date': "Date",
+        'time': "Time",
+        'sector': "Sector",
+        'page': "Page"
+    }
+}
+
+# Traductions des types d'analyse
+ANALYSIS_TYPE_TRANSLATIONS = {
+    'fr': {
+        'synthese_executive': "Synthèse Exécutive",
+        'analyse_concurrentielle': "Analyse Concurrentielle",
+        'veille_technologique': "Veille Technologique",
+        'analyse_risques': "Analyse des Risques",
+        'etude_marche': "Étude de Marché",
+        'analyse_approfondie': "Analyse Approfondie"
+    },
+    'en': {
+        'synthese_executive': "Executive Summary",
+        'analyse_concurrentielle': "Competitive Analysis",
+        'veille_technologique': "Technology Watch",
+        'analyse_risques': "Risk Analysis",
+        'etude_marche': "Market Study",
+        'analyse_approfondie': "In-depth Analysis"
+    }
+}
+
+
 # Configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@postgres:5432/insight_db")
 BRAND_LOGO_PATH = os.environ.get("BRAND_LOGO_PATH", "/app/data/logo/logo.svg")
 WATERMARK_PATH = "/app/filigrane/watermark.png"  # Chemin vers le filigrane
+MEMORY_SERVICE_URL = os.environ.get("MEMORY_SERVICE_URL", "http://memory-service:8008")
+
+
+def save_document_to_memory(
+    user_id: int,
+    report_id: int,
+    title: str,
+    content: Optional[str] = None,
+    analysis_type: Optional[str] = None,
+    metadata: Optional[Dict] = None
+):
+    """Save document to memory service using internal endpoint (synchronous for report-service)"""
+    try:
+        result = requests.post(
+            f"{MEMORY_SERVICE_URL}/internal/documents",
+            json={
+                "user_id": user_id,
+                "document_type": "report",
+                "title": title[:500] if title else "Rapport sans titre",
+                "content": (content or "")[:5000],
+                "analysis_type": analysis_type or "",
+                "business_type": metadata.get("business_type", "") if metadata else "",
+                "report_id": report_id,
+                "watch_id": 0,
+                "extra_data": metadata or {}
+            },
+            timeout=5
+        )
+        if result.status_code == 200:
+            logger.info(f"✅ Document saved to memory service for user {user_id}: report {report_id}")
+        else:
+            logger.warning(f"Memory service returned {result.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to save document to memory service: {e}")
+
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -42,8 +150,9 @@ Base = declarative_base()
 # Models
 class Report(Base):
     __tablename__ = "reports"
-    
+
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)  # Owner of the report
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     analysis_type = Column(String, nullable=True)
@@ -58,6 +167,8 @@ class ExportPayload(BaseModel):
     brand: Optional[Dict] = None
 
 class GenerateReportPayload(BaseModel):
+    # Accept both int and str (UUID) for backward compatibility with Supabase migration
+    user_id: Union[int, str]
     title: str
     content: str
     analysis_type: Optional[str] = None
@@ -66,6 +177,7 @@ class GenerateReportPayload(BaseModel):
 
 class ReportResponse(BaseModel):
     id: int
+    user_id: int
     title: str
     analysis_type: Optional[str]
     created_at: datetime
@@ -75,6 +187,7 @@ class ReportResponse(BaseModel):
 
 class ReportDetail(BaseModel):
     id: int
+    user_id: int
     title: str
     content: str
     analysis_type: Optional[str]
@@ -91,6 +204,98 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Cache for UUID to integer user_id mapping
+_user_id_cache: dict = {}
+
+
+def resolve_user_id(user_id_input: Union[int, str], db) -> int:
+    """
+    Resolve a user_id input (UUID string or integer) to an integer user_id.
+    Uses the user_id_mapping table to convert Supabase UUIDs to legacy integer IDs.
+
+    Args:
+        user_id_input: Either a UUID string from Supabase or an integer user_id
+        db: Database session
+
+    Returns:
+        Integer user_id for database operations
+    """
+    # If it's already an integer, return it
+    if isinstance(user_id_input, int):
+        return user_id_input
+
+    try:
+        return int(user_id_input)
+    except (ValueError, TypeError):
+        pass
+
+    # Check cache first
+    if user_id_input in _user_id_cache:
+        return _user_id_cache[user_id_input]
+
+    # It's likely a UUID - look it up in the mapping table
+    try:
+        result = db.execute(
+            text("SELECT old_user_id FROM user_id_mapping WHERE supabase_user_id = :uuid"),
+            {"uuid": user_id_input}
+        ).fetchone()
+
+        if result:
+            old_user_id = result[0]
+            # Cache the result
+            _user_id_cache[user_id_input] = old_user_id
+            logger.info(f"Resolved UUID {user_id_input[:8]}... to user_id {old_user_id}")
+            return old_user_id
+        else:
+            logger.warning(f"No mapping found for UUID {user_id_input}, defaulting to user_id=1")
+            return 1
+
+    except Exception as e:
+        logger.error(f"Error resolving user_id {user_id_input}: {e}")
+        return 1
+
+
+def save_document_to_memory(
+    user_id: int,
+    report_id: int,
+    title: str,
+    content: str,
+    analysis_type: Optional[str] = None,
+    business_type: Optional[str] = None,
+    metadata: Optional[Dict] = None
+):
+    """
+    Save document to memory service using internal endpoint.
+    Uses /api/internal/documents which doesn't require JWT authentication.
+    """
+    try:
+        # Use internal endpoint with user_id as query parameter
+        response = requests.post(
+            f"{MEMORY_SERVICE_URL}/api/internal/documents",
+            params={"user_id": user_id},
+            json={
+                "document_type": "report",
+                "title": title,
+                "content": content[:5000] if content else None,  # Truncate for storage
+                "analysis_type": analysis_type,
+                "business_type": business_type,
+                "report_id": report_id,
+                "extra_data": metadata or {}
+            },
+            timeout=5
+        )
+
+        if response.status_code == 201:
+            logger.info(f"✅ Document saved to memory service: report_id={report_id}, user={user_id}")
+        else:
+            logger.warning(f"⚠️ Failed to save document to memory service: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.warning(f"⚠️ Could not save document to memory service: {e}")
+        # Don't fail the report generation if memory service is down
+
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -402,13 +607,16 @@ class ReportFormatter:
         canvas_obj.setFillColor(colors.HexColor('#6B8FC1'))  # Bleu moyen pour le fond
         canvas_obj.rect(0, 0, page_width, 1*cm, fill=1, stroke=0)
         
-        # Texte du footer en blanc
+        # Texte du footer en blanc - traduit selon la langue détectée
         canvas_obj.setFillColor(colors.HexColor('#FFFFFF'))
-        footer_text = f"© AXIAL {datetime.now().year}. Tous droits réservés. www.axial-ia.com"
+        lang = getattr(self, '_current_language', 'fr')
+        footer_rights = PDF_TRANSLATIONS[lang]['footer']
+        footer_text = f"© AXIAL {datetime.now().year}. {footer_rights} www.axial-ia.com"
         canvas_obj.drawString(2*cm, 0.4*cm, footer_text)
         
-        # Numéro de page à droite en blanc
-        page_num = f"Page {doc.page}"
+        # Numéro de page à droite en blanc - traduit
+        page_label = PDF_TRANSLATIONS[lang]['page']
+        page_num = f"{page_label} {doc.page}"
         canvas_obj.drawRightString(page_width - 2*cm, 0.4*cm, page_num)
         
         canvas_obj.restoreState()
@@ -420,6 +628,10 @@ class ReportFormatter:
     
     def create_professional_pdf(self, title: str, content: str, analysis_type: str = None, sources: List[Dict] = None, metadata: Dict = None) -> bytes:
         """Create a professional PDF report with watermark - Style Veille Stratégique"""
+        # Détecter la langue du contenu
+        self._current_language = detect_content_language(content)
+        lang = self._current_language
+        logger.info(f"📄 PDF generation - Detected language: {lang}")
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer, 
@@ -448,26 +660,38 @@ class ReportFormatter:
         story.append(Paragraph(clean_title, self.styles['CustomTitle']))
         story.append(Spacer(1, 1*cm))
         
-        # Type d'analyse (si fourni)
+        # Type d'analyse (si fourni) - traduit
         if analysis_type:
-            analysis_type_display = analysis_type.replace('_', ' ').title()
-            story.append(Paragraph(f"<b>Type d'analyse :</b> {analysis_type_display}", self.styles['Subtitle']))
+            # Traduire le type d'analyse selon la langue
+            analysis_type_key = analysis_type.lower().replace(' ', '_')
+            if analysis_type_key in ANALYSIS_TYPE_TRANSLATIONS.get(lang, {}):
+                analysis_type_display = ANALYSIS_TYPE_TRANSLATIONS[lang][analysis_type_key]
+            else:
+                analysis_type_display = analysis_type.replace('_', ' ').title()
+            type_label = PDF_TRANSLATIONS[lang]['analysis_type']
+            story.append(Paragraph(f"<b>{type_label} :</b> {analysis_type_display}", self.styles['Subtitle']))
             story.append(Spacer(1, 0.5*cm))
-        
-        # Date de génération
-        date_str = datetime.now().strftime('%d %B %Y')
-        story.append(Paragraph(f"<b>Date :</b> {date_str}", self.styles['Subtitle']))
+
+        # Date de génération - traduit
+        if lang == 'en':
+            date_str = datetime.now().strftime('%d %B %Y')
+        else:
+            date_str = datetime.now().strftime('%d %B %Y')
+        date_label = PDF_TRANSLATIONS[lang]['date']
+        story.append(Paragraph(f"<b>{date_label} :</b> {date_str}", self.styles['Subtitle']))
         story.append(Spacer(1, 0.3*cm))
         
-        # Heure
+        # Heure - traduit
         time_str = datetime.now().strftime('%H:%M')
-        story.append(Paragraph(f"<b>Heure :</b> {time_str}", self.styles['Subtitle']))
+        time_label = PDF_TRANSLATIONS[lang]['time']
+        story.append(Paragraph(f"<b>{time_label} :</b> {time_str}", self.styles['Subtitle']))
         
         story.append(Spacer(1, 2*cm))
         
-        # Box d'information (optionnel)
+        # Box d'information (optionnel) - traduit
         if metadata and metadata.get('business_type'):
-            info_data = [[Paragraph(f"<b>Secteur :</b> {metadata['business_type'].replace('_', ' ').title()}", self.styles['Normal'])]]
+            sector_label = PDF_TRANSLATIONS[lang]['sector']
+            info_data = [[Paragraph(f"<b>{sector_label} :</b> {metadata['business_type'].replace('_', ' ').title()}", self.styles['Normal'])]]
             info_table = Table(info_data, colWidths=[doc.width])
             info_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F4F8')),
@@ -1046,6 +1270,9 @@ def health():
 def generate_report(payload: GenerateReportPayload, db: Session = Depends(get_db)):
     """Generate and store a new report"""
     try:
+        # Resolve UUID to integer if needed (Supabase migration compatibility)
+        resolved_user_id = resolve_user_id(payload.user_id, db)
+
         # CORRECTION: Nettoyer les emojis et limiter le titre à 200 caractères max
         import re
         clean_title = payload.title if payload.title else "Rapport sans titre"
@@ -1053,21 +1280,35 @@ def generate_report(payload: GenerateReportPayload, db: Session = Depends(get_db
         clean_title = re.sub(r'[^\x00-\x7F\u00C0-\u00FF]+', '', clean_title)
         # Limiter la longueur
         clean_title = clean_title[:200] if len(clean_title) > 200 else clean_title
-        
+
         # Create new report
         report = Report(
+            user_id=resolved_user_id,  # Owner of the report (resolved from UUID if needed)
             title=clean_title,
             content=payload.content,
             analysis_type=payload.analysis_type,
             metadata_json=json.dumps(payload.metadata) if payload.metadata else None
         )
-        
+
         db.add(report)
         db.commit()
         db.refresh(report)
-        
-        logger.info(f"Generated report {report.id}: {payload.title}")
-        
+
+        logger.info(f"Generated report {report.id} for user {resolved_user_id} (input: {str(payload.user_id)[:16]}...): {payload.title[:50]}")
+
+        # Save to memory service (best effort, don't fail if it's down)
+        try:
+            save_document_to_memory(
+                user_id=resolved_user_id,
+                report_id=report.id,
+                title=clean_title,
+                content=payload.content,
+                analysis_type=payload.analysis_type,
+                metadata=payload.metadata
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save document to memory service: {e}")
+
         return ReportResponse.from_orm(report)
         
     except Exception as e:
@@ -1075,17 +1316,40 @@ def generate_report(payload: GenerateReportPayload, db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
 
 @app.get("/reports", response_model=List[ReportResponse])
-def list_reports(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_reports(
+    skip: int = 0,
+    limit: int = 100,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """List all reports"""
-    reports = db.query(Report).order_by(Report.created_at.desc()).offset(skip).limit(limit).all()
+    query = db.query(Report)
+
+    # Filter by user if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(Report.user_id == resolved_uid)
+
+    reports = query.order_by(Report.created_at.desc()).offset(skip).limit(limit).all()
     return [ReportResponse.from_orm(report) for report in reports]
 
 @app.get("/reports/{report_id}", response_model=ReportDetail)
-def get_report(report_id: int, db: Session = Depends(get_db)):
+def get_report(
+    report_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Get detailed report information"""
-    report = db.query(Report).filter(Report.id == report_id).first()
+    query = db.query(Report).filter(Report.id == report_id)
+
+    # Filter by user if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(Report.user_id == resolved_uid)
+
+    report = query.first()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=404, detail="Report not found or access denied")
     
     # Parse metadata
     metadata = None
@@ -1097,6 +1361,7 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
     
     return ReportDetail(
         id=report.id,
+        user_id=report.user_id,
         title=report.title,
         content=report.content,
         analysis_type=report.analysis_type,
@@ -1105,24 +1370,46 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
     )
 
 @app.delete("/reports/{report_id}")
-def delete_report(report_id: int, db: Session = Depends(get_db)):
+def delete_report(
+    report_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Delete a report"""
-    report = db.query(Report).filter(Report.id == report_id).first()
+    query = db.query(Report).filter(Report.id == report_id)
+
+    # Filter by user if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(Report.user_id == resolved_uid)
+
+    report = query.first()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=404, detail="Report not found or access denied")
     
     db.delete(report)
     db.commit()
-    
-    logger.info(f"Deleted report {report_id}")
+
+    logger.info(f"Deleted report {report_id} for user {user_id if user_id else 'admin'}")
     return {"message": f"Report {report_id} deleted successfully"}
 
 @app.get("/export/{report_id}")
-def export_report_pdf(report_id: int, db: Session = Depends(get_db)):
+def export_report_pdf(
+    report_id: int,
+    user_id: Optional[str] = None,  # Optional for admin, accepts UUID or integer string
+    db: Session = Depends(get_db)
+):
     """Export report as professional PDF"""
-    report = db.query(Report).filter(Report.id == report_id).first()
+    query = db.query(Report).filter(Report.id == report_id)
+
+    # Filter by user if provided (regular users)
+    if user_id is not None:
+        resolved_uid = resolve_user_id(user_id, db)
+        query = query.filter(Report.user_id == resolved_uid)
+
+    report = query.first()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=404, detail="Report not found or access denied")
     
     try:
         # Parse metadata
@@ -1146,7 +1433,7 @@ def export_report_pdf(report_id: int, db: Session = Depends(get_db)):
         filename = f"report_{report.id}_{report.title[:20].replace(' ', '_')}.pdf"
         headers = {"Content-Disposition": f"attachment; filename={filename}"}
         
-        logger.info(f"Exported report {report_id} as PDF")
+        logger.info(f"Exported report {report_id} as PDF for user {user_id if user_id else 'admin'}")
         
         return StreamingResponse(
             BytesIO(pdf_bytes), 

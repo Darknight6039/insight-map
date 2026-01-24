@@ -23,6 +23,7 @@ class WatchScheduler:
         self.database_url = database_url
         self.backend_url = os.getenv("BACKEND_SERVICE_URL", "http://backend-service:8006")
         self.report_url = os.getenv("REPORT_URL", "http://report-service:8004")
+        self.memory_url = os.getenv("MEMORY_SERVICE_URL", "http://memory-service:8008")
         
         # Use in-memory job store - persistence handled by our WatchConfig table
         self.scheduler = AsyncIOScheduler(
@@ -159,6 +160,7 @@ class WatchScheduler:
             # Create history entry
             history_entry = WatchHistory(
                 watch_id=watch_id,
+                user_id=watch.user_id,  # Track watch owner for audit
                 status="running",
                 executed_at=start_time
             )
@@ -197,10 +199,10 @@ class WatchScheduler:
                 report_response = await client.post(
                     f"{self.report_url}/generate",
                     json={
+                        "user_id": watch.user_id,  # Report owned by watch owner
                         "title": watch.name,
                         "content": analysis_content,
-                        "report_type": watch.report_type,
-                        "topic": watch.topic
+                        "analysis_type": watch.report_type
                     }
                 )
                 report_response.raise_for_status()
@@ -214,7 +216,19 @@ class WatchScheduler:
                 pdf_response = await client.get(f"{self.report_url}/export/{report_id}")
                 pdf_response.raise_for_status()
                 pdf_content = pdf_response.content
-            
+
+            # Step 3.5: Save watch document to memory service (best effort)
+            try:
+                logger.info(f"Saving watch document to memory service")
+                # Note: Memory service requires authentication, but scheduler doesn't have user token
+                # For MVP, this will be saved when report-service creates the report
+                # Alternatively, we could create a system/service token for internal calls
+                # For now, we skip this or implement service-to-service auth
+                # TODO: Implement service-to-service authentication
+                pass
+            except Exception as e:
+                logger.warning(f"Failed to save watch document to memory service: {e}")
+
             # Step 4: Send email
             logger.info(f"Sending email to {len(watch.email_recipients)} recipients")
             email_sent = email_sender.send_watch_report(

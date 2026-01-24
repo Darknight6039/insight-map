@@ -2,6 +2,8 @@
 
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
+import { Button } from './ui/button';
 
 interface Source {
   id: number;
@@ -137,20 +139,15 @@ export const DocumentModal: React.FC<DocumentModalProps> = ({
                     </div>
                   </div>
                   
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={onClose}
-                    className="ml-4 p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                    className="ml-4 text-muted-foreground hover:text-foreground"
                     aria-label="Fermer"
                   >
-                    <svg 
-                      className="w-6 h-6 text-gray-400 group-hover:text-white transition-colors" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                    <X className="w-6 h-6" />
+                  </Button>
                 </div>
               </div>
 
@@ -178,22 +175,16 @@ export const DocumentModal: React.FC<DocumentModalProps> = ({
                       <p className="text-sm text-gray-300 font-mono leading-relaxed">
                         {source.apa_citation}
                       </p>
-                      <button
+                      <Button
+                        variant="link"
+                        size="sm"
                         onClick={() => {
                           navigator.clipboard.writeText(source.apa_citation || '');
-                          // Feedback visuel (optionnel)
-                          const btn = event?.currentTarget;
-                          if (btn) {
-                            btn.textContent = '✓ Copié !';
-                            setTimeout(() => {
-                              btn.textContent = '📋 Copier';
-                            }, 2000);
-                          }
                         }}
-                        className="mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                        className="mt-3 text-xs text-blue-400 hover:text-blue-300 p-0 h-auto"
                       >
                         📋 Copier la citation
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -222,31 +213,22 @@ export const DocumentModal: React.FC<DocumentModalProps> = ({
 
               {/* Footer avec actions */}
               <div className="bg-gray-800/50 px-6 py-4 border-t border-gray-700 flex items-center justify-between">
-                <button
+                <Button
+                  variant="ghost"
                   onClick={onClose}
-                  className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
                 >
                   Fermer
-                </button>
+                </Button>
                 <div className="flex gap-3">
-                  <button
+                  <Button
                     onClick={handleOpenDocument}
-                    className="
-                      px-6 py-2.5 
-                      bg-gradient-to-r from-blue-600 to-blue-500 
-                      hover:from-blue-500 hover:to-blue-400
-                      text-white font-medium rounded-lg
-                      transition-all duration-200
-                      shadow-lg shadow-blue-500/30
-                      hover:shadow-xl hover:shadow-blue-500/40
-                      flex items-center gap-2
-                    "
+                    className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
                     Ouvrir le Document
-                  </button>
+                  </Button>
                 </div>
               </div>
             </motion.div>
