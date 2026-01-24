@@ -2,7 +2,7 @@
 Backend Service - Version robuste sans points d'échec
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -83,6 +83,7 @@ class BusinessAnalysisRequest(BaseModel):
     title: Optional[str] = None
     include_recommendations: Optional[bool] = True  # Option pour inclure/exclure les recommandations
     language: Optional[str] = "fr"  # Langue de réponse: 'fr' ou 'en'
+    user_id: Optional[str] = None  # ID utilisateur pour charger ses contextes
 
 class AnalysisResponse(BaseModel):
     analysis_type: str
@@ -343,9 +344,9 @@ def format_context_safe(documents: List[Dict]) -> str:
     
     return context
 
-def create_optimized_prompt(business_type: str, analysis_type: str, query: str, context: str, include_recommendations: bool = True, language: str = "fr", user_id: Optional[str] = None) -> str:
+async def create_optimized_prompt(business_type: str, analysis_type: str, query: str, context: str, include_recommendations: bool = True, language: str = "fr", user_id: Optional[str] = None) -> str:
     """Crée prompts concis et efficaces pour rapports de cabinet de conseil avec sonar-pro
-    
+
     Args:
         business_type: Type de métier
         analysis_type: Type d'analyse
@@ -373,11 +374,12 @@ Toutes les sections, titres, contenus et recommandations doivent être rédigés
 """
     
     # Integration du contexte utilisateur et historique (RAG)
+    # Multi-contexte: recupere TOUS les contextes actifs depuis memory-service
     user_context_section = ""
     user_history_section = ""
     if user_id:
         try:
-            user_context_section = get_context_for_prompt(user_id, max_length=2000)
+            user_context_section = await get_context_for_prompt(user_id, max_length=4000)
             user_history_section = get_history_for_prompt(user_id, query, max_length=800)
         except Exception as e:
             logger.warning(f"Error fetching user context/history: {e}")
@@ -1133,7 +1135,7 @@ Réponds maintenant avec recherche approfondie et croisement systématique des s
         logger.error(f"Critical error in Perplexity call: {e}")
         return f"❌ **Erreur critique**\n\n{str(e)[:300]}"
 
-async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None, user_id: str = "1") -> AnalysisResponse:
+async def generate_business_analysis_safe(business_type: str, analysis_type: str, query: str, title: str = None, user_id: Optional[str] = None) -> AnalysisResponse:
     """Génère analyse avec gestion d'erreurs complète + sauvegarde memory-service"""
     try:
         is_deep_analysis = "approfondi" in analysis_type.lower()
@@ -1149,11 +1151,11 @@ async def generate_business_analysis_safe(business_type: str, analysis_type: str
         context = format_context_safe(documents)
         logger.info(f"✓ [2/5] Contexte formaté ({len(context)} caractères)")
         
-        # 3. Création prompt optimisé avec détection de langue
+        # 3. Création prompt optimisé avec détection de langue + multi-contexte
         detected_language = detect_query_language(query)
         logger.info(f"🌐 Langue détectée: {detected_language}")
-        logger.info("🎯 [3/5] Création prompt optimisé...")
-        prompt = create_optimized_prompt(business_type, analysis_type, query, context, include_recommendations=True, language=detected_language)
+        logger.info("🎯 [3/5] Création prompt optimisé (multi-contexte)...")
+        prompt = await create_optimized_prompt(business_type, analysis_type, query, context, include_recommendations=True, language=detected_language, user_id=user_id)
         expected_sources = "60 sources" if is_deep_analysis else "40-60 sources"
         logger.info(f"✓ [3/5] Prompt créé (type: {expected_sources})")
         
@@ -1332,7 +1334,8 @@ async def extended_analysis(request: BusinessAnalysisRequest):
         request.business_type,
         request.analysis_type,
         request.query,
-        request.title
+        request.title,
+        user_id=request.user_id
     )
 
 @app.post("/business-analysis", response_model=AnalysisResponse)
@@ -1342,7 +1345,8 @@ async def business_analysis(request: BusinessAnalysisRequest):
         request.business_type,
         request.analysis_type,
         request.query,
-        request.title
+        request.title,
+        user_id=request.user_id
     )
 
 @app.post("/analyze", response_model=AnalysisResponse)
@@ -1410,13 +1414,14 @@ async def extended_analysis_stream(request: BusinessAnalysisRequest):
             reco_status = "avec recommandations" if include_reco else "sans recommandations"
             lang_status = "EN" if detected_language == "en" else "FR"
             yield sse_msg(30, 'prompt', f'Construction de la requete ({reco_status}, {lang_status})...')
-            prompt = create_optimized_prompt(
+            prompt = await create_optimized_prompt(
                 request.business_type or "general",
                 request.analysis_type,
                 request.query,
                 context,
                 include_recommendations=include_reco,
-                language=detected_language
+                language=detected_language,
+                user_id=getattr(request, 'user_id', None)
             )
             await asyncio.sleep(0.3)
             
@@ -1804,13 +1809,59 @@ async def save_context_text(request: TextContextRequest, user_id: str = "default
 
 
 @app.post("/context/upload")
-async def upload_context_document(user_id: str = "default_user"):
+async def upload_context_document(
+    file: UploadFile = File(...),
+    user_id: str = "default_user"
+):
     """
     Upload un document de contexte (PDF, DOCX, TXT)
-    Note: En production, utiliser FastAPI UploadFile
+    Extrait le texte et le sauvegarde comme contexte utilisateur
     """
-    # Placeholder - en production, recevoir le fichier via form-data
-    return {"status": "error", "message": "Upload endpoint requires multipart form data. Use gateway API."}
+    import tempfile
+    import os as os_module
+
+    # Validate file type
+    filename = file.filename or "document"
+    file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+
+    allowed_types = {'pdf', 'docx', 'txt'}
+    if file_ext not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Type de fichier non supporté: {file_ext}. Types acceptés: {', '.join(allowed_types)}"
+        )
+
+    try:
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # Extract text from file
+        extracted_text = extract_text_from_file(tmp_path, file_ext)
+
+        # Clean up temp file
+        os_module.unlink(tmp_path)
+
+        if not extracted_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible d'extraire le texte du document. Vérifiez que le fichier n'est pas vide ou corrompu."
+            )
+
+        # Save as context
+        result = save_document_context(user_id, filename, extracted_text, file_ext)
+
+        logger.info(f"Document context uploaded for user {user_id[:8]}...: {filename}")
+
+        return {"status": "success", "context": result}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading document context: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors du traitement du document: {str(e)}")
 
 
 @app.get("/context/current")
@@ -1989,11 +2040,11 @@ async def build_assistant_context(user_id: str, message: str) -> tuple:
     context_parts.append(app_context)
     sources_used.append("Documentation Prometheus")
     
-    # 2. Contexte RAG de l'entreprise
+    # 2. Contexte RAG de l'entreprise (multi-contexte via memory-service)
     try:
-        user_context = get_context_for_prompt(user_id)
+        user_context = await get_context_for_prompt(user_id)
         if user_context and len(user_context) > 50:
-            context_parts.append(f"\n## Contexte de l'entreprise de l'utilisateur:\n{user_context[:2000]}")
+            context_parts.append(f"\n## Contexte de l'entreprise de l'utilisateur:\n{user_context[:4000]}")
             sources_used.append("Contexte entreprise")
     except Exception as e:
         logger.warning(f"Could not load user context: {e}")

@@ -102,6 +102,70 @@ class DocumentList(BaseModel):
 
 
 # ============================================================================
+# Context Schemas (Multi-context with 2GB quota)
+# ============================================================================
+
+class ContextCreate(BaseModel):
+    """Schema for creating a new context"""
+    name: str = Field(..., min_length=1, max_length=255)
+    context_type: str = Field(..., pattern='^(text|document)$')
+    content: str = Field(..., min_length=1)
+    filename: Optional[str] = None
+    file_type: Optional[str] = None
+    is_active: bool = True
+
+
+class ContextUpdate(BaseModel):
+    """Schema for updating a context"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ContextResponse(BaseModel):
+    """Schema for context response (without full content)"""
+    id: int
+    user_id: int
+    name: str
+    context_type: str
+    preview: Optional[str]
+    filename: Optional[str]
+    file_type: Optional[str]
+    content_size: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ContextDetailResponse(ContextResponse):
+    """Full context including content"""
+    content: str
+
+
+class ContextListResponse(BaseModel):
+    """Context list response"""
+    total: int
+    contexts: list[ContextResponse]
+
+
+class StorageQuotaResponse(BaseModel):
+    """User storage quota info"""
+    user_id: int
+    total_used_bytes: int
+    max_bytes: int
+    used_percentage: float
+    remaining_bytes: int
+
+
+class InternalContextCreate(ContextCreate):
+    """Schema for creating a context internally (includes user_id)"""
+    user_id: Union[int, str]
+
+
+# ============================================================================
 # Migration Schemas
 # ============================================================================
 

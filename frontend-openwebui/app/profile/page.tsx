@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { 
-  User, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Save, 
-  CheckCircle, 
+import {
+  User,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Save,
+  CheckCircle,
   AlertCircle,
   ArrowLeft,
   Shield,
@@ -18,8 +18,35 @@ import {
   Upload,
   Type,
   Trash2,
-  Building
+  Building,
+  Plus,
+  ToggleLeft,
+  ToggleRight,
+  HardDrive,
+  Edit3
 } from 'lucide-react'
+
+// Types for multi-context
+interface ContextItem {
+  id: number
+  name: string
+  context_type: 'text' | 'document'
+  preview?: string
+  filename?: string
+  file_type?: string
+  content_size: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface StorageQuota {
+  user_id: number
+  total_used_bytes: number
+  max_bytes: number
+  used_percentage: number
+  remaining_bytes: number
+}
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
@@ -47,14 +74,19 @@ export default function ProfilePage() {
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [passwordError, setPasswordError] = useState('')
 
-  // Context form
+  // Multi-context management
+  const [contexts, setContexts] = useState<ContextItem[]>([])
+  const [storageQuota, setStorageQuota] = useState<StorageQuota | null>(null)
+  const [isLoadingContexts, setIsLoadingContexts] = useState(true)
+  const [showAddContext, setShowAddContext] = useState(false)
   const [contextType, setContextType] = useState<'text' | 'document'>('text')
+  const [contextName, setContextName] = useState('')
   const [contextText, setContextText] = useState('')
   const [contextDocument, setContextDocument] = useState<File | null>(null)
-  const [currentContextInfo, setCurrentContextInfo] = useState<{ type: string; name?: string; preview?: string } | null>(null)
   const [isSavingContext, setIsSavingContext] = useState(false)
   const [contextSuccess, setContextSuccess] = useState(false)
   const [contextError, setContextError] = useState('')
+  const [editingContextId, setEditingContextId] = useState<number | null>(null)
 
   // Initialize form with user data
   useEffect(() => {
@@ -154,32 +186,40 @@ export default function ProfilePage() {
     })
   }
 
-  // Fetch current context on load
+  // Fetch contexts and quota on load
   useEffect(() => {
-    const fetchContext = async () => {
+    const fetchContextsAndQuota = async () => {
       if (!token) return
+      setIsLoadingContexts(true)
       try {
-        const response = await fetch(`${API_URL}/context/current`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          if (data && data.type) {
-            setCurrentContextInfo(data)
-            if (data.type === 'text') {
-              setContextType('text')
-              setContextText(data.preview || '')
-            } else {
-              setContextType('document')
-            }
-          }
+        const [ctxRes, quotaRes] = await Promise.all([
+          fetch(`${API_URL}/api/contexts`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/api/contexts/quota`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ])
+        if (ctxRes.ok) {
+          const data = await ctxRes.json()
+          setContexts(data.contexts || [])
+        }
+        if (quotaRes.ok) {
+          const quotaData = await quotaRes.json()
+          setStorageQuota(quotaData)
         }
       } catch (err) {
-        console.log('No context found or error fetching')
+        console.log('Error fetching contexts:', err)
+      } finally {
+        setIsLoadingContexts(false)
       }
     }
-    fetchContext()
+    fetchContextsAndQuota()
   }, [token])
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'Ko', 'Mo', 'Go']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
 
   const handleSaveContext = async () => {
     setContextError('')
@@ -187,66 +227,144 @@ export default function ProfilePage() {
     setIsSavingContext(true)
 
     try {
+      let content = ''
+      let name = contextName || 'Nouveau contexte'
+
       if (contextType === 'text') {
-        const response = await fetch(`${API_URL}/context/text`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ content: contextText })
-        })
-        if (!response.ok) throw new Error('Erreur lors de la sauvegarde')
-        setCurrentContextInfo({ type: 'text', preview: contextText.substring(0, 100) })
+        content = contextText
+        if (!content) throw new Error('Veuillez entrer du contenu')
       } else if (contextDocument) {
+        // Read document content (for now, use filename as content placeholder)
+        // The actual content extraction will happen server-side
         const formData = new FormData()
         formData.append('file', contextDocument)
-        const response = await fetch(`${API_URL}/context/upload`, {
+        const uploadRes = await fetch(`${API_URL}/context/upload`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: formData
         })
-        if (!response.ok) throw new Error('Erreur lors de l\'upload')
-        setCurrentContextInfo({ type: 'document', name: contextDocument.name })
+        if (!uploadRes.ok) throw new Error('Erreur lors de l\'upload')
+        // Refresh contexts after upload
+        const ctxRes = await fetch(`${API_URL}/api/contexts`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (ctxRes.ok) {
+          const data = await ctxRes.json()
+          setContexts(data.contexts || [])
+        }
+        setContextSuccess(true)
+        setShowAddContext(false)
+        resetContextForm()
+        setTimeout(() => setContextSuccess(false), 3000)
+        return
+      } else {
+        throw new Error('Veuillez selectionner un fichier')
       }
+
+      // Create text context via new API
+      const response = await fetch(`${API_URL}/api/contexts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: name,
+          context_type: contextType,
+          content: content,
+          is_active: true
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Erreur lors de la sauvegarde')
+      }
+
+      const newContext = await response.json()
+      setContexts(prev => [newContext, ...prev])
+
+      // Refresh quota
+      const quotaRes = await fetch(`${API_URL}/api/contexts/quota`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (quotaRes.ok) {
+        setStorageQuota(await quotaRes.json())
+      }
+
       setContextSuccess(true)
+      setShowAddContext(false)
+      resetContextForm()
       setTimeout(() => setContextSuccess(false), 3000)
-    } catch (err) {
-      setContextError('Erreur lors de la sauvegarde du contexte')
+    } catch (err: any) {
+      setContextError(err.message || 'Erreur lors de la sauvegarde du contexte')
     } finally {
       setIsSavingContext(false)
     }
   }
 
-  const handleDeleteContext = async () => {
+  const resetContextForm = () => {
+    setContextName('')
+    setContextText('')
+    setContextDocument(null)
+    setContextType('text')
+    setEditingContextId(null)
+  }
+
+  const handleDeleteContext = async (contextId: number) => {
     try {
-      await fetch(`${API_URL}/context`, {
+      const response = await fetch(`${API_URL}/api/contexts/${contextId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
-      setCurrentContextInfo(null)
-      setContextText('')
-      setContextDocument(null)
+      if (response.ok || response.status === 204) {
+        setContexts(prev => prev.filter(c => c.id !== contextId))
+        // Refresh quota
+        const quotaRes = await fetch(`${API_URL}/api/contexts/quota`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (quotaRes.ok) {
+          setStorageQuota(await quotaRes.json())
+        }
+      }
     } catch (err) {
       setContextError('Erreur lors de la suppression')
+    }
+  }
+
+  const handleToggleContextActive = async (contextId: number, currentActive: boolean) => {
+    try {
+      const response = await fetch(`${API_URL}/api/contexts/${contextId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_active: !currentActive })
+      })
+      if (response.ok) {
+        const updatedContext = await response.json()
+        setContexts(prev => prev.map(c => c.id === contextId ? updatedContext : c))
+      }
+    } catch (err) {
+      setContextError('Erreur lors de la mise à jour')
     }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // Validate file type
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
       if (!validTypes.includes(file.type)) {
-        setContextError('Format non supporte. Utilisez PDF, DOCX ou TXT.')
+        setContextError('Format non supporté. Utilisez PDF, DOCX ou TXT.')
         return
       }
-      // Validate file size (10MB max)
       if (file.size > 10 * 1024 * 1024) {
         setContextError('Fichier trop volumineux (max 10 Mo)')
         return
       }
       setContextDocument(file)
+      setContextName(file.name.replace(/\.[^/.]+$/, ''))
       setContextError('')
     }
   }
@@ -359,7 +477,7 @@ export default function ProfilePage() {
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="glass-input w-full pl-12"
+                    className="glass-input w-full pl-12 pr-4"
                     placeholder="Votre nom complet"
                   />
                 </div>
@@ -375,7 +493,7 @@ export default function ProfilePage() {
                     type="email"
                     value={user.email}
                     disabled
-                    className="glass-input w-full pl-12 opacity-50 cursor-not-allowed"
+                    className="glass-input w-full pl-12 pr-4 opacity-50 cursor-not-allowed"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">L&apos;email ne peut pas être modifié</p>
@@ -395,20 +513,56 @@ export default function ProfilePage() {
             </form>
           </motion.div>
 
-          {/* Context Form */}
+          {/* Multi-Context Management */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25 }}
             className="glass-card mb-6"
           >
-            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
-              <Building className="w-5 h-5 text-[var(--axial-accent)]" />
-              Contexte de votre entreprise
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Building className="w-5 h-5 text-[var(--axial-accent)]" />
+                Contextes entreprise
+              </h3>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowAddContext(!showAddContext)}
+                className="flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Ajouter
+              </Button>
+            </div>
+
             <p className="text-sm text-gray-400 mb-4">
-              Fournissez des informations sur votre entreprise pour personnaliser les analyses et veilles.
+              Ajoutez plusieurs contextes pour personnaliser vos analyses. Les contextes actifs sont utilisés par l&apos;IA.
             </p>
+
+            {/* Storage quota bar */}
+            {storageQuota && (
+              <div className="mb-4 p-3 bg-white/5 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-400 flex items-center gap-2">
+                    <HardDrive className="w-4 h-4" />
+                    Stockage utilisé
+                  </span>
+                  <span className="text-sm text-gray-300">
+                    {formatBytes(storageQuota.total_used_bytes)} / {formatBytes(storageQuota.max_bytes)}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      storageQuota.used_percentage > 90 ? 'bg-red-500' :
+                      storageQuota.used_percentage > 70 ? 'bg-yellow-500' : 'bg-cyan-500'
+                    }`}
+                    style={{ width: `${Math.min(storageQuota.used_percentage, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {contextError && (
               <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm mb-4">
@@ -420,138 +574,178 @@ export default function ProfilePage() {
             {contextSuccess && (
               <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm mb-4">
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                Contexte enregistre avec succes
+                Contexte enregistré avec succès
               </div>
             )}
 
-            {/* Current context indicator */}
-            {currentContextInfo && (
-              <div className="flex items-center justify-between bg-cyan-500/10 border border-cyan-500/30 rounded-xl px-4 py-3 mb-4">
-                <div className="flex items-center gap-3">
-                  {currentContextInfo.type === 'text' ? (
-                    <Type className="w-5 h-5 text-cyan-400" />
-                  ) : (
-                    <FileText className="w-5 h-5 text-cyan-400" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-cyan-400">
-                      Contexte actif : {currentContextInfo.type === 'text' ? 'Texte' : 'Document'}
-                    </p>
-                    {currentContextInfo.name && (
-                      <p className="text-xs text-gray-400">{currentContextInfo.name}</p>
-                    )}
-                    {currentContextInfo.preview && (
-                      <p className="text-xs text-gray-400 truncate max-w-xs">
-                        {currentContextInfo.preview}...
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDeleteContext}
-                  title="Supprimer le contexte"
-                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            {/* Add new context form */}
+            {showAddContext && (
+              <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
+                <h4 className="text-sm font-medium text-white mb-3">Nouveau contexte</h4>
 
-            {/* Context type selector */}
-            <div className="flex gap-2 mb-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setContextType('text')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 h-auto rounded-xl transition-all ${
-                  contextType === 'text'
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                    : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                }`}
-              >
-                <Type className="w-5 h-5" />
-                <span className="font-medium">Saisie texte</span>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setContextType('document')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 h-auto rounded-xl transition-all ${
-                  contextType === 'document'
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                    : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                }`}
-              >
-                <FileText className="w-5 h-5" />
-                <span className="font-medium">Document</span>
-              </Button>
-            </div>
-
-            {/* Text input */}
-            {contextType === 'text' && (
-              <div className="space-y-3">
-                <textarea
-                  value={contextText}
-                  onChange={(e) => setContextText(e.target.value)}
-                  className="glass-input w-full h-40 resize-none"
-                  placeholder="Decrivez votre entreprise, secteur d'activite, objectifs strategiques, marche cible, concurrents principaux..."
-                  maxLength={5000}
-                />
-                <p className="text-xs text-gray-500 text-right">
-                  {contextText.length} / 5000 caracteres
-                </p>
-              </div>
-            )}
-
-            {/* Document upload */}
-            {contextType === 'document' && (
-              <div className="space-y-3">
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-400">
-                      {contextDocument 
-                        ? contextDocument.name 
-                        : 'Cliquez ou glissez votre document'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      PDF, DOCX, TXT (max 10 Mo)
-                    </p>
-                  </div>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                    onChange={handleFileChange}
+                {/* Context name */}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    value={contextName}
+                    onChange={(e) => setContextName(e.target.value)}
+                    className="glass-input w-full px-4"
+                    placeholder="Nom du contexte (ex: Présentation entreprise)"
                   />
-                </label>
-                {contextDocument && (
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                </div>
+
+                {/* Context type selector */}
+                <div className="flex gap-2 mb-3">
+                  <Button
+                    type="button"
+                    variant={contextType === 'text' ? 'accent' : 'glass'}
+                    onClick={() => setContextType('text')}
+                    size="sm"
+                    className="flex-1 flex items-center justify-center gap-2"
+                  >
+                    <Type className="w-4 h-4" />
+                    Texte
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={contextType === 'document' ? 'accent' : 'glass'}
+                    onClick={() => setContextType('document')}
+                    size="sm"
+                    className="flex-1 flex items-center justify-center gap-2"
+                  >
                     <FileText className="w-4 h-4" />
-                    <span>{contextDocument.name}</span>
-                    <span className="text-gray-500">
-                      ({(contextDocument.size / 1024).toFixed(1)} Ko)
-                    </span>
+                    Document
+                  </Button>
+                </div>
+
+                {/* Text input */}
+                {contextType === 'text' && (
+                  <div className="space-y-2">
+                    <textarea
+                      value={contextText}
+                      onChange={(e) => setContextText(e.target.value)}
+                      className="glass-input w-full h-32 resize-none px-4"
+                      placeholder="Décrivez votre entreprise, secteur, objectifs..."
+                      maxLength={50000}
+                    />
+                    <p className="text-xs text-gray-500 text-right">
+                      {contextText.length} / 50 000 caractères
+                    </p>
                   </div>
                 )}
+
+                {/* Document upload */}
+                {contextType === 'document' && (
+                  <div className="space-y-2">
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
+                      <div className="flex flex-col items-center justify-center py-4">
+                        <Upload className="w-6 h-6 text-gray-400 mb-1" />
+                        <p className="text-sm text-gray-400">
+                          {contextDocument ? contextDocument.name : 'Cliquez pour upload'}
+                        </p>
+                        <p className="text-xs text-gray-500">PDF, DOCX, TXT (max 10 Mo)</p>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.docx,.txt"
+                        onChange={handleFileChange}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setShowAddContext(false); resetContextForm(); }}
+                  >
+                    Annuler
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSaveContext}
+                    disabled={isSavingContext || (contextType === 'text' && !contextText) || (contextType === 'document' && !contextDocument)}
+                  >
+                    {isSavingContext ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Enregistrer
+                  </Button>
+                </div>
               </div>
             )}
 
-            <Button
-              type="button"
-              onClick={handleSaveContext}
-              disabled={isSavingContext || (contextType === 'text' && !contextText) || (contextType === 'document' && !contextDocument)}
-              className="mt-4"
-            >
-              {isSavingContext ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <Save className="w-5 h-5" />
-              )}
-              Enregistrer le contexte
-            </Button>
+            {/* Contexts list */}
+            {isLoadingContexts ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
+              </div>
+            ) : contexts.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <Building className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>Aucun contexte enregistré</p>
+                <p className="text-sm text-gray-500">Cliquez sur &quot;Ajouter&quot; pour créer votre premier contexte</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {contexts.map((ctx) => (
+                  <div
+                    key={ctx.id}
+                    className={`flex items-center justify-between p-3 rounded-xl transition-all ${
+                      ctx.is_active
+                        ? 'bg-cyan-500/10 border border-cyan-500/30'
+                        : 'bg-white/5 border border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {ctx.context_type === 'text' ? (
+                        <Type className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-gray-400'}`} />
+                      ) : (
+                        <FileText className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-gray-400'}`} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${ctx.is_active ? 'text-cyan-400' : 'text-gray-300'}`}>
+                          {ctx.name}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {ctx.preview ? `${ctx.preview.substring(0, 50)}...` : ctx.filename || 'Document'}
+                          {' • '}{formatBytes(ctx.content_size)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleToggleContextActive(ctx.id, ctx.is_active)}
+                        title={ctx.is_active ? 'Désactiver' : 'Activer'}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {ctx.is_active ? (
+                          <ToggleRight className="w-5 h-5 text-cyan-400" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteContext(ctx.id)}
+                        title="Supprimer"
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
 
           {/* Password Form */}
@@ -617,7 +811,7 @@ export default function ProfilePage() {
                     type={showPasswords ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="glass-input w-full pl-12"
+                    className="glass-input w-full pl-12 pr-4"
                     placeholder="••••••••"
                     required
                     minLength={6}
@@ -635,7 +829,7 @@ export default function ProfilePage() {
                     type={showPasswords ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="glass-input w-full pl-12"
+                    className="glass-input w-full pl-12 pr-4"
                     placeholder="••••••••"
                     required
                     minLength={6}

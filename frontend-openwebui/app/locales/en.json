@@ -49,7 +49,11 @@
       "analyse_risques": "Risk Analysis",
       "analyse_risques_desc": "Risk mapping and mitigation",
       "analyse_reglementaire": "Regulatory Analysis",
-      "analyse_reglementaire_desc": "Compliance, legislation and legal developments"
+      "analyse_reglementaire_desc": "Compliance, legislation and legal developments",
+      "etude_marche": "Market Study",
+      "etude_marche_desc": "Market analysis, trends and opportunities",
+      "analyse_approfondie": "Deep Analysis",
+      "analyse_approfondie_desc": "Detailed and in-depth analysis of a specific topic"
     },
     "describeSubject": "Describe your analysis subject",
     "placeholder": "Ex: Cryptocurrency market analysis, leaders' strategies and emerging opportunities...",

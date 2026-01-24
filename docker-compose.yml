@@ -426,14 +426,14 @@ services:
         condition: service_started
       report-service:
         condition: service_started
-    networks:
-      - insight-network
     environment:
       DATABASE_URL: postgresql://postgres:${SUPABASE_POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@supabase-db:5432/postgres
       BACKEND_SERVICE_URL: http://backend-service:8006
       REPORT_URL: http://report-service:8004
       SUPABASE_URL: http://supabase-kong:8000
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    networks:
+      - insight-network
     restart: unless-stopped
 
   memory-service:

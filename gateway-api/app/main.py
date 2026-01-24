@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -81,7 +81,8 @@ def get_service_urls():
         "rag": os.environ.get("RAG_URL", "http://rag-service:8003"),
         "report": os.environ.get("REPORT_URL", "http://report-service:8004"),
         "status": os.environ.get("STATUS_URL", "http://status-service:8005"),
-        "scheduler": os.environ.get("SCHEDULER_URL", "http://scheduler-service:8006"),
+        "backend": os.environ.get("BACKEND_URL", "http://backend-service:8006"),
+        "scheduler": os.environ.get("SCHEDULER_URL", "http://scheduler-service:8007"),
         "memory": os.environ.get("MEMORY_SERVICE_URL", "http://memory-service:8008"),
     }
 
@@ -1443,5 +1444,256 @@ async def trigger_migration(current_user: User = Depends(get_current_user)):
     except httpx.HTTPError as e:
         logger.error(f"Error triggering migration: {e}")
         raise HTTPException(status_code=500, detail="Failed to trigger migration")
+
+
+# ============================================================================
+# CONTEXT PROXY ENDPOINTS
+# ============================================================================
+
+@app.get("/context/current")
+async def get_context_current(current_user: SupabaseUser = Depends(get_current_user)):
+    """
+    Proxy endpoint to get current user context from backend-service
+    """
+    services = get_service_urls()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{services['backend']}/context/current",
+                params={"user_id": current_user.id}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching context for user {current_user.id}: {e}")
+        # Return empty context instead of error for better UX
+        return {"type": None, "message": "No context set"}
+
+
+@app.post("/context/text")
+async def save_context_text(
+    request: Request,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to save text context for current user
+    """
+    services = get_service_urls()
+
+    try:
+        body = await request.json()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{services['backend']}/context/text",
+                params={"user_id": current_user.id},
+                json=body
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error saving context for user {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save context")
+
+
+@app.delete("/context")
+async def delete_context(current_user: SupabaseUser = Depends(get_current_user)):
+    """
+    Proxy endpoint to delete user context
+    """
+    services = get_service_urls()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{services['backend']}/context",
+                params={"user_id": current_user.id}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error deleting context for user {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete context")
+
+
+@app.post("/context/upload")
+async def upload_context_document(
+    file: UploadFile = File(...),
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Proxy endpoint to upload document context (PDF, DOCX, TXT)
+    Forwards the file to backend-service for text extraction and storage
+    """
+    services = get_service_urls()
+
+    try:
+        # Read file content
+        file_content = await file.read()
+
+        # Forward to backend-service as multipart form data
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {
+                "file": (file.filename, file_content, file.content_type or "application/octet-stream")
+            }
+            response = await client.post(
+                f"{services['backend']}/context/upload",
+                params={"user_id": current_user.id},
+                files=files
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPStatusError as e:
+        # Forward backend error message to client
+        try:
+            error_detail = e.response.json().get("detail", "Erreur lors de l'upload")
+        except Exception:
+            error_detail = "Erreur lors de l'upload du document"
+        logger.error(f"Error uploading context document for user {current_user.id}: {error_detail}")
+        raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error uploading context document for user {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload document")
+
+
+# ============================================================================
+# MULTI-CONTEXT MANAGEMENT PROXY ENDPOINTS (New API)
+# ============================================================================
+
+@app.get("/api/contexts")
+async def list_contexts(
+    active_only: bool = Query(False),
+    context_type: Optional[str] = Query(None),
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """List all user contexts"""
+    services = get_service_urls()
+
+    params = {"active_only": active_only}
+    if context_type:
+        params["context_type"] = context_type
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"{services['memory']}/api/v1/contexts",
+            params=params,
+            headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+@app.post("/api/contexts")
+async def create_context(
+    request: Request,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """Create a new context"""
+    services = get_service_urls()
+    body = await request.json()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{services['memory']}/api/v1/contexts",
+                json=body,
+                headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPStatusError as e:
+        try:
+            error_detail = e.response.json().get("detail", "Erreur lors de la création")
+        except Exception:
+            error_detail = "Erreur lors de la création du contexte"
+        raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+
+
+@app.get("/api/contexts/quota")
+async def get_storage_quota(current_user: SupabaseUser = Depends(get_current_user)):
+    """Get user's storage quota"""
+    services = get_service_urls()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"{services['memory']}/api/v1/contexts/quota",
+            headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+@app.get("/api/contexts/{context_id}")
+async def get_context_detail(
+    context_id: int,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """Get full context by ID"""
+    services = get_service_urls()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"{services['memory']}/api/v1/contexts/{context_id}",
+            headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Contexte non trouvé")
+        response.raise_for_status()
+        return response.json()
+
+
+@app.patch("/api/contexts/{context_id}")
+async def update_context(
+    context_id: int,
+    request: Request,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """Update a context"""
+    services = get_service_urls()
+    body = await request.json()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.patch(
+                f"{services['memory']}/api/v1/contexts/{context_id}",
+                json=body,
+                headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+            )
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Contexte non trouvé")
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPStatusError as e:
+        try:
+            error_detail = e.response.json().get("detail", "Erreur lors de la mise à jour")
+        except Exception:
+            error_detail = "Erreur lors de la mise à jour du contexte"
+        raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+
+
+@app.delete("/api/contexts/{context_id}", status_code=204)
+async def delete_context_item(
+    context_id: int,
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """Delete a context"""
+    services = get_service_urls()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.delete(
+            f"{services['memory']}/api/v1/contexts/{context_id}",
+            headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Contexte non trouvé")
+        response.raise_for_status()
 
 

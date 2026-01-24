@@ -22,7 +22,7 @@ export default function ChatPage() {
       <motion.header
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="navbar-glass"
+        className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 py-4"
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Bouton retour */}

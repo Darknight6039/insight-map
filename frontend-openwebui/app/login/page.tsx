@@ -1,21 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Eye, EyeOff, Mail, Lock, User, Ticket, ArrowRight, Loader2 } from 'lucide-react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { Eye, EyeOff, LogIn, Loader2, CreditCard, User, Ticket } from 'lucide-react'
 import Link from 'next/link'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
-import AxialLogo from '../components/AxialLogo'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
 type AuthMode = 'login' | 'register'
 
 export default function LoginPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
   const [mode, setMode] = useState<AuthMode>(initialMode)
-  
+
   // Update mode if query param changes
   useEffect(() => {
     const modeParam = searchParams.get('mode')
@@ -23,6 +25,7 @@ export default function LoginPage() {
       setMode('register')
     }
   }, [searchParams])
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -30,7 +33,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  
+
   const { signIn, signUp } = useSupabaseAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,251 +60,160 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center px-6 py-12">
-      {/* Background decorative elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <motion.div 
-          className="absolute top-1/3 left-1/4 w-[500px] h-[500px] rounded-full"
-          style={{
-            background: 'linear-gradient(135deg, var(--primary), var(--axial-accent))',
-            filter: 'blur(80px)',
-            opacity: 0.12
-          }}
-          animate={{
-            scale: [1, 1.15, 1],
-            x: [0, 30, 0],
-          }}
-          transition={{
-            duration: 25,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
-        <motion.div 
-          className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] rounded-full"
-          style={{
-            background: 'linear-gradient(135deg, var(--accent), var(--axial-accent))',
-            filter: 'blur(80px)',
-            opacity: 0.12
-          }}
-          animate={{
-            scale: [1.1, 1, 1.1],
-            x: [0, -20, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="w-full max-w-md relative z-10"
-      >
-        {/* Logo and Title */}
-        <motion.div 
-          className="text-center mb-10"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-        >
-          <motion.div 
-            className="flex justify-center mb-6"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
-          >
-            <AxialLogo size={72} />
-          </motion.div>
-          <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">
-            {mode === 'login' ? 'Bienvenue' : 'Créer un compte'}
-          </h1>
-          <p className="text-gray-400 text-base max-w-xs mx-auto leading-relaxed">
-            {mode === 'login' 
-              ? 'Connectez-vous pour accéder à la plateforme' 
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-4xl font-bold tracking-tight text-primary">AXIAL</span>
+            <span className="text-sm font-medium tracking-[0.3em] text-muted-foreground uppercase">Intelligence</span>
+          </div>
+          <p className="text-muted-foreground mt-4">
+            {mode === 'login'
+              ? 'Connectez-vous pour accéder à la plateforme'
               : 'Rejoignez la plateforme d\'intelligence stratégique'
             }
           </p>
-        </motion.div>
+        </div>
 
-        {/* Main Card */}
-        <motion.div
-          className="glass-card p-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
-        >
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <AnimatePresence mode="wait">
+        {/* Login Card */}
+        <Card className="border-border/50 shadow-xl">
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">
+              {mode === 'login' ? 'Connexion' : 'Créer un compte'}
+            </CardTitle>
+            <CardDescription>
+              {mode === 'login'
+                ? 'Entrez vos identifiants pour continuer'
+                : 'Remplissez le formulaire pour créer votre compte'
+              }
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* Error Message */}
               {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm"
-                >
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-destructive text-sm">
                   {error}
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
 
-            <AnimatePresence mode="wait">
+              {/* Full Name (Register only) */}
               {mode === 'register' && (
-                <motion.div
-                  key="fullname"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Nom complet
-                  </label>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Nom complet</Label>
                   <div className="relative">
-                    <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
-                    <input
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="fullName"
                       type="text"
+                      placeholder="Jean Dupont"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="glass-input w-full pl-12"
-                      placeholder="Jean Dupont"
+                      className="pl-10"
                       required={mode === 'register'}
                     />
                   </div>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
 
-            {/* Email Field */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Adresse email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email">Adresse email</Label>
+                <Input
+                  id="email"
                   type="email"
+                  placeholder="nom@entreprise.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="glass-input w-full pl-12"
-                  placeholder="vous@entreprise.com"
                   required
                   autoComplete="email"
                 />
               </div>
-            </div>
 
-            {/* Password Field */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-300">
-                  Mot de passe
-                </label>
-                {mode === 'login' && (
-                  <Link 
-                    href="/forgot-password"
-                    className="text-sm text-[var(--axial-accent)] hover:underline"
-                  >
-                    Mot de passe oublié ?
-                  </Link>
-                )}
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="glass-input w-full pl-12 pr-12"
-                  placeholder="••••••••"
-                  required
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  minLength={6}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
+              {/* Password */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Mot de passe</Label>
+                  {mode === 'login' && (
+                    <Link
+                      href="/forgot-password"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Mot de passe oublié ?
+                    </Link>
                   )}
-                </Button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    minLength={6}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            <AnimatePresence mode="wait">
+              {/* Invitation Code (Register only) */}
               {mode === 'register' && (
-                <motion.div
-                  key="invitation"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.2, delay: 0.1 }}
-                >
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Code d&apos;invitation
-                  </label>
+                <div className="space-y-2">
+                  <Label htmlFor="invitationCode">Code d&apos;invitation</Label>
                   <div className="relative">
-                    <Ticket className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
-                    <input
+                    <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="invitationCode"
                       type="text"
+                      placeholder="Entrez votre code d'invitation"
                       value={invitationCode}
                       onChange={(e) => setInvitationCode(e.target.value)}
-                      className="glass-input w-full pl-12"
-                      placeholder="Entrez votre code d'invitation"
+                      className="pl-10"
                       required={mode === 'register'}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-muted-foreground">
                     Vous devez avoir reçu un code d&apos;invitation d&apos;un administrateur
                   </p>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
 
-            {/* Submit Button */}
-            <motion.button
-              type="submit"
-              disabled={isLoading}
-              className="primary-button w-full flex items-center justify-center gap-2 py-4 mt-6"
-              whileHover={{ scale: isLoading ? 1 : 1.02 }}
-              whileTap={{ scale: isLoading ? 1 : 0.98 }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Chargement...</span>
-                </>
-              ) : (
-                <>
-                  <span>{mode === 'login' ? 'Se connecter' : 'Créer mon compte'}</span>
-                  <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </motion.button>
-          </form>
+              {/* Submit Button */}
+              <Button type="submit" className="w-full gap-2" disabled={isLoading}>
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LogIn className="h-4 w-4" />
+                )}
+                {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
+              </Button>
+            </form>
 
-          {/* Toggle Mode */}
-          <div className="mt-6 pt-6 border-t border-white/10 text-center">
-            <p className="text-gray-400 text-sm">
+            {/* Toggle Mode */}
+            <div className="mt-6 text-center text-sm text-muted-foreground">
               {mode === 'login' ? (
                 <>
                   Vous avez un code d&apos;invitation ?{' '}
                   <Button
-                    type="button"
                     variant="link"
                     onClick={toggleMode}
-                    className="text-primary p-0 h-auto"
+                    className="px-0 text-primary"
                   >
                     Créer un compte
                   </Button>
@@ -310,30 +222,35 @@ export default function LoginPage() {
                 <>
                   Vous avez déjà un compte ?{' '}
                   <Button
-                    type="button"
                     variant="link"
                     onClick={toggleMode}
-                    className="text-primary p-0 h-auto"
+                    className="px-0 text-primary"
                   >
                     Se connecter
                   </Button>
                 </>
               )}
-            </p>
-          </div>
-        </motion.div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Pricing Link */}
+        <div className="mt-6 text-center">
+          <Button
+            variant="outline"
+            onClick={() => router.push('/pricing')}
+            className="gap-2"
+          >
+            <CreditCard className="w-4 h-4" />
+            Voir les tarifs
+          </Button>
+        </div>
 
         {/* Footer */}
-        <motion.p
-          className="text-center text-gray-500 text-xs mt-8"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
-          Axial Intelligence © {new Date().getFullYear()}
-        </motion.p>
-      </motion.div>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          © {new Date().getFullYear()} Axial Intelligence. Tous droits réservés.
+        </p>
+      </div>
     </div>
   )
 }
-

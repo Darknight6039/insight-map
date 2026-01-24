@@ -370,7 +370,7 @@ export default function WatchesPanel() {
           <RefreshCw className="w-4 h-4" />
           {t('common.refresh')}
         </Button>
-        <Button onClick={() => setShowCreateForm(true)}>
+        <Button variant="default" onClick={() => setShowCreateForm(true)}>
           <Plus className="w-4 h-4" />
           {t('watches.newWatch')}
         </Button>
@@ -513,7 +513,7 @@ export default function WatchesPanel() {
                       <Button
                         key={freq.id}
                         type="button"
-                        variant="outline"
+                        variant={frequencyType === freq.id ? 'accent' : 'glass'}
                         onClick={() => {
                           setFrequencyType(freq.id as any)
                           // Set default cron based on frequency
@@ -528,11 +528,7 @@ export default function WatchesPanel() {
                             setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} 1 * *` })
                           }
                         }}
-                        className={`flex flex-col items-center gap-1 p-3 h-auto rounded-xl transition-all duration-200 ${
-                          frequencyType === freq.id
-                            ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                            : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:border-white/20'
-                        }`}
+                        className="flex flex-col items-center gap-1 p-3 h-auto"
                       >
                         <span className="text-lg font-bold">{freq.icon}</span>
                         <span className="text-xs">{freq.label}</span>
@@ -593,18 +589,14 @@ export default function WatchesPanel() {
                           <Button
                             key={day.value}
                             type="button"
-                            variant="outline"
+                            variant={cronParts.dayOfWeek === day.value ? 'accent' : 'glass'}
                             size="icon"
                             onClick={() => {
                               const newValue = day.value
                               setCronParts({ ...cronParts, dayOfWeek: newValue })
                               setFormData({ ...formData, cron_expression: `${cronParts.minute} ${cronParts.hour} * * ${newValue}` })
                             }}
-                            className={`w-10 h-10 rounded-lg text-sm font-medium transition-all duration-200 ${
-                              cronParts.dayOfWeek === day.value
-                                ? 'bg-cyan-500/30 border-cyan-500/50 text-cyan-400'
-                                : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                            }`}
+                            className="w-10 h-10 text-sm font-medium"
                           >
                             {day.label}
                           </Button>
@@ -723,6 +715,7 @@ export default function WatchesPanel() {
                     {t('common.cancel')}
                   </Button>
                   <Button
+                    variant="default"
                     onClick={editingWatch ? updateWatch : createWatch}
                     disabled={!formData.name || !formData.topic || !formData.email_recipients}
                   >
@@ -754,6 +747,7 @@ export default function WatchesPanel() {
             {t('watches.noWatchesDesc')}
           </p>
           <Button
+            variant="default"
             onClick={() => setShowCreateForm(true)}
             size="lg"
           >

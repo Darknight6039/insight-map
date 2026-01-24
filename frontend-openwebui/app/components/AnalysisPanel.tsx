@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useTranslation } from '../context/LanguageContext'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
 import { Button } from './ui/button'
+import { Switch } from './ui/switch'
 
 interface AnalysisType {
   id: string
@@ -68,13 +69,13 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
 
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  // Détails des étapes avec icônes et couleurs
+  // Détails des étapes avec icônes et couleurs (optimisées pour dark mode)
   const progressSteps: ProgressDetail[] = [
-    { icon: FileSearch, label: 'Recherche documentaire', range: [0, 15], color: '#10B981' },
-    { icon: Search, label: 'Analyse contextuelle', range: [15, 30], color: '#3B82F6' },
-    { icon: Zap, label: 'Croisement de données', range: [30, 85], color: '#8B5CF6' },
-    { icon: Brain, label: 'Analyse des sources', range: [85, 95], color: '#F59E0B' },
-    { icon: CheckCircle, label: 'Finalisation', range: [95, 100], color: '#06B6D4' },
+    { icon: FileSearch, label: 'Recherche documentaire', range: [0, 15], color: '#34D399' },  // Emerald-400
+    { icon: Search, label: 'Analyse contextuelle', range: [15, 30], color: '#60A5FA' },      // Blue-400
+    { icon: Zap, label: 'Croisement de données', range: [30, 85], color: '#A78BFA' },        // Violet-400
+    { icon: Brain, label: 'Analyse des sources', range: [85, 95], color: '#FBBF24' },        // Amber-400
+    { icon: CheckCircle, label: 'Finalisation', range: [95, 100], color: '#22D3EE' },        // Cyan-400
   ]
 
   // Timer pour le temps écoulé
@@ -114,9 +115,9 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
   }
 
   const speedColors = {
-    rapide: 'text-green-400',
-    normal: 'text-blue-400',
-    lent: 'text-yellow-400'
+    rapide: 'text-emerald-400',
+    normal: 'text-sky-300',
+    lent: 'text-amber-300'
   }
 
   // Trouver le type d'analyse sélectionné
@@ -157,7 +158,8 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
           query: query,
           title: `${selectedAnalysisType.name} - ${query.substring(0, 50)}...`,
           include_recommendations: includeRecommendations,
-          language: language
+          language: language,
+          user_id: user?.id
         }),
         signal: abortControllerRef.current.signal
       })
@@ -360,15 +362,15 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
 
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
-                    <h3 className="text-lg font-bold text-white">{currentStep.label}</h3>
+                    <h3 className="text-lg font-bold text-foreground">{currentStep.label}</h3>
                     <span className={`text-xs px-2 py-1 rounded-full ${speedColors[getProgressSpeed()]} bg-white/10`}>
                       {getProgressSpeed() === 'rapide' && 'Rapide'}
                       {getProgressSpeed() === 'normal' && 'Normal'}
                       {getProgressSpeed() === 'lent' && 'Lent'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-300 mb-1">{progressMessage}</p>
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                  <p className="text-sm text-muted-foreground mb-1">{progressMessage}</p>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {elapsedTime}s écoulé
@@ -400,7 +402,7 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
             </div>
 
             {/* Barre de progression animée principale */}
-            <div className="relative h-3 bg-gray-800 rounded-full overflow-hidden mb-4">
+            <div className="relative h-3 bg-secondary rounded-full overflow-hidden mb-4">
               <motion.div
                 className="absolute inset-y-0 left-0 rounded-full"
                 style={{
@@ -425,25 +427,25 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
                 return (
                   <div
                     key={index}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${isActive ? 'bg-white/10 ring-2 ring-axial-accent/50' :
-                      isCompleted ? 'bg-green-500/10' : 'bg-gray-800/50'
+                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${isActive ? 'bg-white/10 ring-2 ring-primary/50' :
+                      isCompleted ? 'bg-green-500/10' : 'bg-secondary/50'
                       }`}
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isActive ? 'bg-axial-accent/30 animate-pulse' :
-                      isCompleted ? 'bg-green-500/30' : 'bg-gray-700/50'
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isActive ? 'bg-primary/30 animate-pulse' :
+                      isCompleted ? 'bg-green-500/30' : 'bg-muted/50'
                       }`}>
                       <StepIcon
-                        className={`w-4 h-4 ${isActive ? 'text-axial-accent' :
-                          isCompleted ? 'text-green-400' : 'text-gray-500'
+                        className={`w-4 h-4 ${isActive ? 'text-primary' :
+                          isCompleted ? 'text-emerald-400' : 'text-muted-foreground'
                           }`}
                       />
                     </div>
-                    <span className={`text-[10px] text-center leading-tight ${isActive ? 'text-white font-medium' :
-                      isCompleted ? 'text-green-400' : 'text-gray-500'
+                    <span className={`text-[10px] text-center leading-tight ${isActive ? 'text-foreground font-medium' :
+                      isCompleted ? 'text-emerald-400' : 'text-muted-foreground'
                       }`}>
                       {step.label}
                     </span>
-                    <span className="text-[9px] text-gray-600">
+                    <span className="text-[9px] text-muted-foreground/70">
                       {step.range[0]}-{step.range[1]}%
                     </span>
                   </div>
@@ -452,10 +454,10 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
             </div>
 
             {/* Mini-logs déroulants */}
-            <div className="bg-gray-900/50 rounded-lg p-3 max-h-32 overflow-y-auto">
+            <div className="bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto">
               <div className="flex items-center gap-2 mb-2">
-                <Loader2 className="w-3 h-3 text-axial-accent animate-spin" />
-                <span className="text-xs font-medium text-gray-400">Activité en temps réel</span>
+                <Loader2 className="w-3 h-3 text-primary animate-spin" />
+                <span className="text-xs font-medium text-muted-foreground">Activité en temps réel</span>
               </div>
               <div className="space-y-1">
                 {logs.slice(-5).map((log, index) => (
@@ -463,7 +465,7 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
                     key={index}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="text-xs text-gray-400 font-mono"
+                    className="text-xs text-muted-foreground font-mono"
                   >
                     {log}
                   </motion.div>
@@ -486,10 +488,10 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
             <Icon className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-semibold text-white">
+            <h2 className="text-2xl font-semibold text-foreground">
               {selectedAnalysisType.name}
             </h2>
-            <p className="text-gray-400">
+            <p className="text-muted-foreground">
               {selectedAnalysisType.description}
             </p>
           </div>
@@ -498,7 +500,7 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
         {/* Champ de saisie */}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-foreground mb-2">
               {t('analysis.describeSubject')}
             </label>
             <textarea
@@ -506,55 +508,46 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
               onChange={(e) => setQuery(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={t('analysis.placeholder')}
-              className="input-liquid w-full min-h-[120px] resize-none"
+              className="glass-input w-full min-h-[120px] resize-none px-4"
               disabled={isLoading}
             />
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               {t('analysis.ctrlEnter')}
             </p>
           </div>
 
           {/* Toggle Recommandations */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-border">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${includeRecommendations ? 'bg-axial-accent/20' : 'bg-gray-500/20'}`}>
-                <Lightbulb className={`w-5 h-5 ${includeRecommendations ? 'text-axial-accent' : 'text-gray-400'}`} />
+              <div className={`p-2 rounded-lg ${includeRecommendations ? 'bg-primary/20' : 'bg-muted/50'}`}>
+                <Lightbulb className={`w-5 h-5 ${includeRecommendations ? 'text-primary' : 'text-muted-foreground'}`} />
               </div>
               <div>
-                <p className="text-white font-medium">{t('analysis.includeRecommendations')}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-foreground font-medium">{t('analysis.includeRecommendations')}</p>
+                <p className="text-xs text-muted-foreground">
                   {includeRecommendations
                     ? t('analysis.includeRecommendationsDesc')
                     : t('analysis.noRecommendationsDesc')}
                 </p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              onClick={() => setIncludeRecommendations(!includeRecommendations)}
-              className={`relative inline-flex h-6 w-11 p-0 items-center rounded-full transition-colors duration-200 focus-visible:ring-axial-accent focus-visible:ring-offset-axial-dark ${includeRecommendations ? 'bg-axial-accent hover:bg-axial-accent/90' : 'bg-gray-600 hover:bg-gray-500'
-                }`}
+            <Switch
+              checked={includeRecommendations}
+              onCheckedChange={setIncludeRecommendations}
               disabled={isLoading}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${includeRecommendations ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-              />
-            </Button>
+            />
           </div>
 
           {/* Bouton de génération */}
-          <motion.button
+          <Button
             onClick={runAnalysisWithSSE}
             disabled={isLoading || !query.trim()}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className={`w-full btn-liquid py-4 text-lg font-semibold flex items-center justify-center gap-3 
-              ${isLoading || !query.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
+            size="lg"
+            className="w-full h-14 text-base font-semibold gap-3"
           >
             {isLoading ? (
               <>
-                <Clock className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
                 {t('analysis.generating')} ({progress}%)
               </>
             ) : (
@@ -563,7 +556,7 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
                 {t('analysis.generateReport')}
               </>
             )}
-          </motion.button>
+          </Button>
         </div>
       </motion.div>
 
@@ -575,8 +568,8 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
           transition={{ delay: 0.2 }}
         >
           <div className="glass-card">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-500" />
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
               {t('analysis.generatedReports')} ({results.length})
             </h3>
 
@@ -598,25 +591,23 @@ export default function AnalysisPanel({ analysisTypes, initialAnalysisType }: An
                           <ResultIcon className="w-4 h-4 text-white" />
                         </div>
                         <div>
-                          <h4 className="font-medium text-white text-sm">
+                          <h4 className="font-medium text-foreground text-sm">
                             {result.title}
                           </h4>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-muted-foreground">
                             {result.timestamp.toLocaleString()} • {result.sources?.length || 0} {t('analysis.sources')}
                           </p>
                         </div>
                       </div>
 
                       {/* SEUL BOUTON: Télécharger PDF */}
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                      <Button
                         onClick={() => exportToPDF(result)}
-                        className="btn-liquid flex items-center gap-2 px-4 py-2"
+                        className="gap-2"
                       >
                         <Download className="w-4 h-4" />
                         {t('analysis.downloadPdf')}
-                      </motion.button>
+                      </Button>
                     </div>
                   </motion.div>
                 )

@@ -1,7 +1,7 @@
 """
 SQLAlchemy models for Memory Service
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Boolean, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from app.database import Base
@@ -96,3 +96,55 @@ class UserIdMapping(Base):
     supabase_user_id = Column(String(36), unique=True, nullable=False, index=True)
     email = Column(String(255), nullable=False)
     migrated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserContext(Base):
+    """
+    Stores multiple context items per user (company info, documents, etc.)
+    Each user can have multiple contexts with a total storage quota of 2GB.
+    """
+    __tablename__ = "user_contexts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+
+    # Context identification
+    name = Column(String(255), nullable=False)  # User-friendly name
+    context_type = Column(String(50), nullable=False, index=True)  # 'text', 'document'
+
+    # Content
+    content = Column(Text, nullable=False)  # The actual context content
+    preview = Column(String(200), nullable=True)  # First 200 chars for display
+
+    # Document-specific fields
+    filename = Column(String(500), nullable=True)  # Original filename if document
+    file_type = Column(String(50), nullable=True)  # pdf, docx, txt
+
+    # Size tracking (in bytes)
+    content_size = Column(BigInteger, nullable=False, default=0)
+
+    # Usage flags
+    is_active = Column(Boolean, default=True)  # Whether to include in prompts
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Additional indexes
+    __table_args__ = (
+        Index('idx_contexts_user', 'user_id'),
+        Index('idx_contexts_user_active', 'user_id', 'is_active'),
+        Index('idx_contexts_type', 'context_type'),
+    )
+
+
+class UserStorageQuota(Base):
+    """
+    Tracks storage usage per user for quota enforcement (2GB default limit)
+    """
+    __tablename__ = "user_storage_quotas"
+
+    user_id = Column(Integer, primary_key=True)
+    total_used_bytes = Column(BigInteger, default=0)  # Current usage
+    max_bytes = Column(BigInteger, default=2147483648)  # 2GB default limit (2 * 1024 * 1024 * 1024)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Mail, ArrowLeft, Send, CheckCircle, AlertCircle } from 'lucide-react'
+import { Mail, ArrowLeft, Send, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import AxialLogo from '../components/AxialLogo'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -40,138 +42,95 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center px-4 py-8">
-      {/* Background decorative elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <motion.div 
-          className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full"
-          style={{
-            background: 'linear-gradient(45deg, var(--primary), var(--axial-accent))',
-            filter: 'blur(60px)',
-            opacity: 0.15
-          }}
-          animate={{
-            scale: [1, 1.1, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md relative z-10"
-      >
-        {/* Logo and Title */}
-        <motion.div 
-          className="text-center mb-8"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div className="flex justify-center mb-4">
-            <AxialLogo size={60} />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-4xl font-bold tracking-tight text-primary">AXIAL</span>
+            <span className="text-sm font-medium tracking-[0.3em] text-muted-foreground uppercase">Intelligence</span>
           </div>
-          <h1 className="text-2xl font-semibold text-white mb-2">
-            Mot de passe oublié
-          </h1>
-          <p className="text-gray-400 text-sm">
-            Entrez votre email pour recevoir un lien de réinitialisation
+          <p className="text-muted-foreground mt-4">
+            Récupération de mot de passe
           </p>
-        </motion.div>
+        </div>
 
         {/* Main Card */}
-        <motion.div
-          className="glass-card"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          {!isSubmitted ? (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {error && (
-                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
+        <Card className="border-border/50 shadow-xl">
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">Mot de passe oublié</CardTitle>
+            <CardDescription>
+              Entrez votre email pour demander une réinitialisation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!isSubmitted ? (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-destructive text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Adresse email
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
-                  <input
+                <div className="space-y-2">
+                  <Label htmlFor="email">Adresse email</Label>
+                  <Input
+                    id="email"
                     type="email"
+                    placeholder="nom@entreprise.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="glass-input w-full pl-12"
-                    placeholder="vous@entreprise.com"
                     required
                     autoComplete="email"
                   />
                 </div>
-              </div>
 
-              <motion.button
-                type="submit"
-                disabled={isLoading}
-                className="primary-button w-full flex items-center justify-center gap-2 py-4"
-                whileHover={{ scale: isLoading ? 1 : 1.02 }}
-                whileTap={{ scale: isLoading ? 1 : 0.98 }}
+                <Button type="submit" className="w-full gap-2" disabled={isLoading}>
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Envoyer la demande
+                </Button>
+              </form>
+            ) : (
+              <div className="text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-500" />
+                </div>
+                <h2 className="text-xl font-semibold text-foreground mb-2">
+                  Demande envoyée
+                </h2>
+                <p className="text-muted-foreground text-sm mb-4">
+                  Si cet email est associé à un compte, un administrateur pourra vous fournir
+                  un lien de réinitialisation.
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Contactez votre administrateur pour obtenir le lien.
+                </p>
+              </div>
+            )}
+
+            {/* Back to login */}
+            <div className="mt-6 text-center">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 text-primary hover:underline text-sm"
               >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Send className="w-5 h-5" />
-                    <span>Envoyer le lien</span>
-                  </>
-                )}
-              </motion.button>
-            </form>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-4"
-            >
-              <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8 text-green-400" />
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">
-                Demande envoyée
-              </h2>
-              <p className="text-gray-400 text-sm mb-4">
-                Si cet email est associé à un compte, un administrateur pourra vous fournir 
-                un lien de réinitialisation.
-              </p>
-              <p className="text-gray-500 text-xs">
-                Contactez votre administrateur pour obtenir le lien.
-              </p>
-            </motion.div>
-          )}
+                <ArrowLeft className="w-4 h-4" />
+                Retour à la connexion
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
-          {/* Back to login */}
-          <div className="mt-6 pt-6 border-t border-white/10 text-center">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 text-[var(--axial-accent)] hover:underline text-sm"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Retour à la connexion
-            </Link>
-          </div>
-        </motion.div>
-      </motion.div>
+        {/* Footer */}
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          © {new Date().getFullYear()} Axial Intelligence. Tous droits réservés.
+        </p>
+      </div>
     </div>
   )
 }
-

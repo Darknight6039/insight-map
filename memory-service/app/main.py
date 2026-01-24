@@ -14,14 +14,17 @@ from sqlalchemy import func, or_
 from loguru import logger
 
 from app.database import get_db, engine, Base
-from app.models import UserConversation, UserDocument, MigrationStatus, UserIdMapping
+from app.models import UserConversation, UserDocument, MigrationStatus, UserIdMapping, UserContext, UserStorageQuota
 from app.schemas import (
     ConversationCreate, ConversationResponse, ConversationList,
     InternalConversationCreate,
     DocumentCreate, DocumentResponse, DocumentList,
     InternalDocumentCreate,
     MigrationStatusResponse, MigrationResult,
-    HealthResponse, ErrorResponse
+    HealthResponse, ErrorResponse,
+    # Context schemas
+    ContextCreate, ContextUpdate, ContextResponse, ContextDetailResponse,
+    ContextListResponse, StorageQuotaResponse, InternalContextCreate
 )
 from app.migration import migrate_user_data, check_migration_status
 
@@ -771,6 +774,280 @@ async def trigger_migration(
     except Exception as e:
         logger.error(f"Migration error for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+
+
+# ============================================================================
+# Context Management Endpoints (Multi-context with 2GB quota)
+# ============================================================================
+
+MAX_STORAGE_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+
+
+def get_or_create_quota(user_id: int, db: Session) -> UserStorageQuota:
+    """Get or create storage quota for user"""
+    quota = db.query(UserStorageQuota).filter(UserStorageQuota.user_id == user_id).first()
+    if not quota:
+        quota = UserStorageQuota(
+            user_id=user_id,
+            total_used_bytes=0,
+            max_bytes=MAX_STORAGE_BYTES
+        )
+        db.add(quota)
+        db.commit()
+        db.refresh(quota)
+    return quota
+
+
+@app.get("/api/v1/contexts", response_model=ContextListResponse)
+async def list_contexts(
+    active_only: bool = Query(False, description="Filter to active contexts only"),
+    context_type: Optional[str] = Query(None, description="Filter by context type"),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """List all contexts for current user"""
+    query = db.query(UserContext).filter(UserContext.user_id == user_id)
+
+    if active_only:
+        query = query.filter(UserContext.is_active == True)
+    if context_type:
+        query = query.filter(UserContext.context_type == context_type)
+
+    contexts = query.order_by(UserContext.created_at.desc()).all()
+
+    return ContextListResponse(total=len(contexts), contexts=contexts)
+
+
+@app.post("/api/v1/contexts", response_model=ContextResponse, status_code=201)
+async def create_context(
+    context: ContextCreate,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Create a new context (enforces quota)"""
+    # Calculate content size
+    content_size = len(context.content.encode('utf-8'))
+
+    # Check quota
+    quota = get_or_create_quota(user_id, db)
+
+    if quota.total_used_bytes + content_size > quota.max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Quota de stockage depassé. Utilisé: {quota.total_used_bytes} bytes, Limite: {quota.max_bytes} bytes"
+        )
+
+    # Create context
+    new_context = UserContext(
+        user_id=user_id,
+        name=context.name,
+        context_type=context.context_type,
+        content=context.content,
+        preview=context.content[:200] if context.content else None,
+        filename=context.filename,
+        file_type=context.file_type,
+        content_size=content_size,
+        is_active=context.is_active
+    )
+    db.add(new_context)
+
+    # Update quota
+    quota.total_used_bytes += content_size
+
+    db.commit()
+    db.refresh(new_context)
+
+    logger.info(f"Context created for user {user_id}: {context.name} ({content_size} bytes)")
+
+    return new_context
+
+
+@app.get("/api/v1/contexts/quota", response_model=StorageQuotaResponse)
+async def get_storage_quota(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Get user's storage quota info"""
+    quota = get_or_create_quota(user_id, db)
+
+    return StorageQuotaResponse(
+        user_id=user_id,
+        total_used_bytes=quota.total_used_bytes,
+        max_bytes=quota.max_bytes,
+        used_percentage=(quota.total_used_bytes / quota.max_bytes) * 100 if quota.max_bytes > 0 else 0,
+        remaining_bytes=max(0, quota.max_bytes - quota.total_used_bytes)
+    )
+
+
+@app.get("/api/v1/contexts/{context_id}", response_model=ContextDetailResponse)
+async def get_context(
+    context_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Get full context by ID"""
+    context = db.query(UserContext).filter(
+        UserContext.id == context_id,
+        UserContext.user_id == user_id
+    ).first()
+
+    if not context:
+        raise HTTPException(status_code=404, detail="Contexte non trouvé")
+
+    return context
+
+
+@app.patch("/api/v1/contexts/{context_id}", response_model=ContextResponse)
+async def update_context(
+    context_id: int,
+    update: ContextUpdate,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Update a context"""
+    context = db.query(UserContext).filter(
+        UserContext.id == context_id,
+        UserContext.user_id == user_id
+    ).first()
+
+    if not context:
+        raise HTTPException(status_code=404, detail="Contexte non trouvé")
+
+    # Handle content update with quota adjustment
+    if update.content is not None:
+        new_size = len(update.content.encode('utf-8'))
+        size_diff = new_size - context.content_size
+        quota = get_or_create_quota(user_id, db)
+
+        if quota.total_used_bytes + size_diff > quota.max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="Quota de stockage depassé"
+            )
+
+        context.content = update.content
+        context.preview = update.content[:200]
+        context.content_size = new_size
+        quota.total_used_bytes += size_diff
+
+    if update.name is not None:
+        context.name = update.name
+
+    if update.is_active is not None:
+        context.is_active = update.is_active
+
+    db.commit()
+    db.refresh(context)
+
+    logger.info(f"Context updated for user {user_id}: {context.name}")
+
+    return context
+
+
+@app.delete("/api/v1/contexts/{context_id}", status_code=204)
+async def delete_context(
+    context_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Delete a context and free quota"""
+    context = db.query(UserContext).filter(
+        UserContext.id == context_id,
+        UserContext.user_id == user_id
+    ).first()
+
+    if not context:
+        raise HTTPException(status_code=404, detail="Contexte non trouvé")
+
+    # Free quota
+    quota = get_or_create_quota(user_id, db)
+    quota.total_used_bytes = max(0, quota.total_used_bytes - context.content_size)
+
+    db.delete(context)
+    db.commit()
+
+    logger.info(f"Context deleted for user {user_id}: {context.name}")
+
+
+@app.get("/internal/contexts/active")
+async def get_active_contexts_internal(
+    user_id: str = Query(..., description="User ID (integer or UUID)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Internal endpoint: Get all active contexts for prompt building.
+    Used by backend-service to inject contexts into prompts.
+    """
+    # Resolve user ID (handles both integer and UUID)
+    try:
+        resolved_id = int(user_id)
+    except ValueError:
+        # It's a UUID, need to resolve
+        resolved_id = resolve_supabase_user_id(user_id, db)
+
+    contexts = db.query(UserContext).filter(
+        UserContext.user_id == resolved_id,
+        UserContext.is_active == True
+    ).order_by(UserContext.created_at.desc()).all()
+
+    return {
+        "contexts": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "content": c.content,
+                "type": c.context_type,
+                "preview": c.preview
+            }
+            for c in contexts
+        ],
+        "total": len(contexts)
+    }
+
+
+@app.post("/internal/contexts", response_model=ContextResponse, status_code=201)
+async def create_context_internal(
+    context: InternalContextCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Internal endpoint: Create context with explicit user_id.
+    Used by gateway-api proxy.
+    """
+    # Resolve user ID
+    try:
+        resolved_id = int(context.user_id)
+    except ValueError:
+        resolved_id = resolve_supabase_user_id(str(context.user_id), db)
+
+    content_size = len(context.content.encode('utf-8'))
+    quota = get_or_create_quota(resolved_id, db)
+
+    if quota.total_used_bytes + content_size > quota.max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Quota de stockage depassé"
+        )
+
+    new_context = UserContext(
+        user_id=resolved_id,
+        name=context.name,
+        context_type=context.context_type,
+        content=context.content,
+        preview=context.content[:200] if context.content else None,
+        filename=context.filename,
+        file_type=context.file_type,
+        content_size=content_size,
+        is_active=context.is_active
+    )
+    db.add(new_context)
+    quota.total_used_bytes += content_size
+    db.commit()
+    db.refresh(new_context)
+
+    logger.info(f"Context created internally for user {resolved_id}: {context.name}")
+
+    return new_context
 
 
 # ============================================================================

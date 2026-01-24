@@ -19,18 +19,17 @@ const SCHEDULER_URL = process.env.NEXT_PUBLIC_SCHEDULER_URL || 'http://localhost
 interface Watch {
   id: number
   name: string
-  subject: string
+  topic: string  // Le backend retourne "topic", pas "subject"
   sector?: string
   report_type?: string
-  keywords?: string
-  schedule?: string
+  keywords?: string[]  // Le backend retourne un array, pas une string
+  sources_preference?: string
   cron_expression?: string
-  recipients?: string
+  email_recipients?: string[]  // Le backend retourne "email_recipients", pas "recipients"
   is_active: boolean
   created_at: string
   updated_at?: string
   next_run?: string
-  last_run?: string
 }
 
 interface HistoryEntry {
@@ -85,6 +84,7 @@ export default function WatchesPage() {
       }
 
       const data = await response.json()
+      console.log('Watches data from backend:', data)  // Debug: voir le format des données
       setWatches(data)
     } catch (err) {
       console.error('Error fetching watches:', err)
@@ -105,18 +105,21 @@ export default function WatchesPage() {
     setIsSubmitting(true)
 
     try {
+      // Convertir les noms de champs du formulaire vers ceux attendus par le backend
       const payload = {
         user_id: user.id,
         name: formData.name,
-        subject: formData.subject,
-        sector: formData.sector,
-        report_type: formData.reportType,
-        keywords: formData.keywords,
-        schedule: formData.frequencyLabel,
-        cron_expression: formData.cronExpression,
-        recipients: formData.recipients,
+        topic: formData.subject,  // Le formulaire utilise "subject", le backend attend "topic"
+        sector: formData.sector || 'general',
+        report_type: formData.reportType || 'synthese_executive',
+        keywords: formData.keywords ? formData.keywords.split(',').map(k => k.trim()).filter(k => k) : [],
+        sources_preference: "all",
+        cron_expression: formData.cronExpression || '0 8 * * 1',
+        email_recipients: formData.recipients ? formData.recipients.split(',').map(e => e.trim()).filter(e => e) : [],
         is_active: true
       }
+
+      console.log('Sending payload to backend:', payload)  // Debug: voir le payload envoyé
 
       let response
 
@@ -138,7 +141,20 @@ export default function WatchesPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || `Erreur ${response.status}`)
+        // Gérer les erreurs de validation Pydantic (tableau d'objets)
+        let errorMessage = `Erreur ${response.status}`
+        if (errorData.detail) {
+          if (Array.isArray(errorData.detail)) {
+            // Erreurs de validation Pydantic: [{loc: [...], msg: "...", type: "..."}]
+            errorMessage = errorData.detail.map((e: { loc?: string[], msg?: string }) =>
+              `${e.loc?.join('.') || 'champ'}: ${e.msg || 'erreur'}`
+            ).join(', ')
+          } else {
+            errorMessage = String(errorData.detail)
+          }
+        }
+        console.error('Validation error details:', errorData)  // Debug
+        throw new Error(errorMessage)
       }
 
       setSheetOpen(false)
@@ -235,21 +251,21 @@ export default function WatchesPage() {
     }
   }
 
-  // Open edit mode
+  // Open edit mode - convertit les champs du backend vers le format du formulaire
   const openEdit = (watch: Watch) => {
     setEditingWatch({
       id: watch.id,
       name: watch.name,
-      subject: watch.subject,
+      subject: watch.topic,  // Backend "topic" → Formulaire "subject"
       sector: watch.sector || '',
-      reportType: watch.report_type || 'deep',
-      keywords: watch.keywords || '',
+      reportType: watch.report_type || 'synthese_executive',
+      keywords: watch.keywords?.join(', ') || '',  // Array → string séparée par virgules
       frequency: 'custom',
-      frequencyLabel: watch.schedule || 'Personnalisé',
+      frequencyLabel: 'Personnalisé',
       time: '09:00',
       dayOfWeek: '1',
       dayOfMonth: '1',
-      recipients: watch.recipients || '',
+      recipients: watch.email_recipients?.join(', ') || '',  // Backend "email_recipients" → Formulaire "recipients"
       cronExpression: watch.cron_expression
     })
     setSheetOpen(true)
@@ -265,7 +281,7 @@ export default function WatchesPage() {
   const filteredWatches = watches.filter(watch => {
     const matchesSearch =
       watch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      watch.subject.toLowerCase().includes(searchQuery.toLowerCase())
+      (watch.topic || '').toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesStatus =
       statusFilter === 'all' ||
@@ -413,14 +429,14 @@ export default function WatchesPage() {
                 <VeilleCard
                   id={watch.id}
                   title={watch.name}
-                  description={watch.subject}
+                  description={watch.topic || ''}
                   isActive={watch.is_active}
                   reportType={watch.report_type || 'Analyse Approfondie'}
                   sourceCount={5}
-                  schedule={watch.schedule || 'Non planifié'}
-                  recipients={watch.recipients?.split(',').filter(r => r.trim()).length || 0}
-                  nextRun={watch.next_run}
-                  tags={watch.keywords?.split(',').filter(k => k.trim()).slice(0, 3)}
+                  schedule={watch.cron_expression || 'Non planifié'}
+                  recipients={watch.email_recipients?.length || 0}
+                  nextRun={typeof watch.next_run === 'string' ? watch.next_run : undefined}
+                  tags={watch.keywords?.filter((k): k is string => typeof k === 'string').slice(0, 3)}
                   onEdit={() => openEdit(watch)}
                   onToggle={() => toggleWatch(watch.id)}
                   onTrigger={() => triggerWatch(watch.id)}

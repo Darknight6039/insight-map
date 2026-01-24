@@ -49,7 +49,11 @@
       "analyse_risques": "Analyse des Risques",
       "analyse_risques_desc": "Cartographie et mitigation des risques",
       "analyse_reglementaire": "Analyse Réglementaire",
-      "analyse_reglementaire_desc": "Conformité, législation et évolutions juridiques"
+      "analyse_reglementaire_desc": "Conformité, législation et évolutions juridiques",
+      "etude_marche": "Étude de Marché",
+      "etude_marche_desc": "Analyse du marché, tendances et opportunités",
+      "analyse_approfondie": "Analyse Approfondie",
+      "analyse_approfondie_desc": "Analyse détaillée et en profondeur d'un sujet spécifique"
     },
     "describeSubject": "Décrivez votre sujet d'analyse",
     "placeholder": "Ex: Analyse du marché des cryptomonnaies, stratégies des leaders et opportunités émergentes...",

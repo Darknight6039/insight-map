@@ -1,10 +1,7 @@
 import './globals.css'
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import { Toaster } from 'sonner'
 import { Providers } from './providers'
-
-const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Axial Intelligence - Strategic AI Platform',
@@ -29,9 +26,9 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-        <meta name="theme-color" content="#0a050f" />
+        <meta name="theme-color" content="#0a0512" />
       </head>
-      <body className={`${inter.className} min-h-screen bg-background text-foreground antialiased`}>
+      <body className="font-sans min-h-screen bg-background text-foreground antialiased">
         <Providers>
           <div className="relative min-h-screen">
             {/* Main content */}
@@ -42,7 +39,7 @@ export default function RootLayout({
             {/* Toast notifications */}
             <Toaster
               position="top-right"
-              theme="dark"
+              theme="system"
               richColors
               closeButton
             />
