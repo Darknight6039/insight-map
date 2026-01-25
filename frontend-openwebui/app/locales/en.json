@@ -270,6 +270,39 @@
       "sante": "Healthcare",
       "energie": "Energy"
     }
+  },
+  "onboarding": {
+    "title": "Set up your company profile",
+    "subtitle": "This information will help personalize your analyses",
+    "step1": {
+      "title": "General information",
+      "orgName": "Organization name",
+      "orgNamePlaceholder": "Your company",
+      "country": "Country",
+      "countryPlaceholder": "Select a country",
+      "orgType": "Organization type",
+      "supportStructure": "Support structure",
+      "other": "Other",
+      "otherPlaceholder": "Please specify..."
+    },
+    "step2": {
+      "startupTitle": "Startup information",
+      "structureTitle": "Structure information",
+      "sector": "Business sector",
+      "sectorPlaceholder": "Select a sector",
+      "employees": "Number of employees",
+      "employeesPlaceholder": "Select a range",
+      "revenue": "Revenue",
+      "revenuePlaceholder": "Select a range",
+      "stage": "Development stage",
+      "stagePlaceholder": "Select a stage",
+      "technologies": "Technologies used",
+      "isAIStartup": "Does your startup consider itself an AI startup?",
+      "aiTypes": "Types of AI used"
+    },
+    "skip": "Skip this step",
+    "finish": "Finish",
+    "saving": "Saving..."
   }
 }
 

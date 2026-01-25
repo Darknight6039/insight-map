@@ -108,7 +108,7 @@ class DocumentList(BaseModel):
 class ContextCreate(BaseModel):
     """Schema for creating a new context"""
     name: str = Field(..., min_length=1, max_length=255)
-    context_type: str = Field(..., pattern='^(text|document)$')
+    context_type: str = Field(..., pattern='^(text|document|company_profile)$')
     content: str = Field(..., min_length=1)
     filename: Optional[str] = None
     file_type: Optional[str] = None

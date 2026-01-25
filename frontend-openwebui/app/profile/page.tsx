@@ -393,16 +393,16 @@ export default function ProfilePage() {
             <div className="flex items-center gap-4">
               <Link 
                 href="/"
-                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                className="p-2 rounded-lg hover:bg-accent/10 transition-colors"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-400" />
+                <ArrowLeft className="w-5 h-5 text-muted-foreground" />
               </Link>
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                   <User className="w-6 h-6 text-[var(--axial-accent)]" />
                   Mon Profil
                 </h1>
-                <p className="text-gray-400 text-sm">Gérer vos informations et votre mot de passe</p>
+                <p className="text-muted-foreground text-sm">Gérer vos informations et votre mot de passe</p>
               </div>
             </div>
           </motion.div>
@@ -416,17 +416,17 @@ export default function ProfilePage() {
           >
             <div className="flex items-center gap-4 mb-4">
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--axial-accent)] to-[var(--accent)] flex items-center justify-center">
-                <User className="w-8 h-8 text-white" />
+                <User className="w-8 h-8 text-foreground" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-white">
+                <h2 className="text-xl font-semibold text-foreground">
                   {user.full_name || user.email.split('@')[0]}
                 </h2>
-                <p className="text-gray-400 flex items-center gap-2">
+                <p className="text-muted-foreground flex items-center gap-2">
                   <Mail className="w-4 h-4" />
                   {user.email}
                 </p>
-                <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Shield className="w-3 h-3" />
                     {user.role === 'admin' ? 'Administrateur' : 'Utilisateur'}
@@ -447,7 +447,7 @@ export default function ProfilePage() {
             transition={{ delay: 0.2 }}
             className="glass-card mb-6"
           >
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
               <User className="w-5 h-5 text-[var(--axial-accent)]" />
               Informations du profil
             </h3>
@@ -468,11 +468,11 @@ export default function ProfilePage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Nom complet
                 </label>
                 <div className="relative">
-                  <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <input
                     type="text"
                     value={fullName}
@@ -484,11 +484,11 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Email
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <input
                     type="email"
                     value={user.email}
@@ -496,7 +496,7 @@ export default function ProfilePage() {
                     className="glass-input w-full pl-12 pr-4 opacity-50 cursor-not-allowed"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">L&apos;email ne peut pas être modifié</p>
+                <p className="text-xs text-muted-foreground mt-1">L&apos;email ne peut pas être modifié</p>
               </div>
 
               <Button
@@ -521,7 +521,7 @@ export default function ProfilePage() {
             className="glass-card mb-6"
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Building className="w-5 h-5 text-[var(--axial-accent)]" />
                 Contextes entreprise
               </h3>
@@ -536,23 +536,23 @@ export default function ProfilePage() {
               </Button>
             </div>
 
-            <p className="text-sm text-gray-400 mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Ajoutez plusieurs contextes pour personnaliser vos analyses. Les contextes actifs sont utilisés par l&apos;IA.
             </p>
 
             {/* Storage quota bar */}
             {storageQuota && (
-              <div className="mb-4 p-3 bg-white/5 rounded-xl">
+              <div className="mb-4 p-3 bg-muted/50 rounded-xl">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-400 flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground flex items-center gap-2">
                     <HardDrive className="w-4 h-4" />
                     Stockage utilisé
                   </span>
-                  <span className="text-sm text-gray-300">
+                  <span className="text-sm text-foreground">
                     {formatBytes(storageQuota.total_used_bytes)} / {formatBytes(storageQuota.max_bytes)}
                   </span>
                 </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all ${
                       storageQuota.used_percentage > 90 ? 'bg-red-500' :
@@ -580,8 +580,8 @@ export default function ProfilePage() {
 
             {/* Add new context form */}
             {showAddContext && (
-              <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
-                <h4 className="text-sm font-medium text-white mb-3">Nouveau contexte</h4>
+              <div className="mb-4 p-4 bg-muted/50 rounded-xl border border-border">
+                <h4 className="text-sm font-medium text-foreground mb-3">Nouveau contexte</h4>
 
                 {/* Context name */}
                 <div className="mb-3">
@@ -628,7 +628,7 @@ export default function ProfilePage() {
                       placeholder="Décrivez votre entreprise, secteur, objectifs..."
                       maxLength={50000}
                     />
-                    <p className="text-xs text-gray-500 text-right">
+                    <p className="text-xs text-muted-foreground text-right">
                       {contextText.length} / 50 000 caractères
                     </p>
                   </div>
@@ -637,13 +637,13 @@ export default function ProfilePage() {
                 {/* Document upload */}
                 {contextType === 'document' && (
                   <div className="space-y-2">
-                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:bg-white/5 transition-colors">
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
                       <div className="flex flex-col items-center justify-center py-4">
-                        <Upload className="w-6 h-6 text-gray-400 mb-1" />
-                        <p className="text-sm text-gray-400">
+                        <Upload className="w-6 h-6 text-muted-foreground mb-1" />
+                        <p className="text-sm text-muted-foreground">
                           {contextDocument ? contextDocument.name : 'Cliquez pour upload'}
                         </p>
-                        <p className="text-xs text-gray-500">PDF, DOCX, TXT (max 10 Mo)</p>
+                        <p className="text-xs text-muted-foreground">PDF, DOCX, TXT (max 10 Mo)</p>
                       </div>
                       <input
                         type="file"
@@ -686,10 +686,10 @@ export default function ProfilePage() {
                 <div className="w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
               </div>
             ) : contexts.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
+              <div className="text-center py-8 text-muted-foreground">
                 <Building className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p>Aucun contexte enregistré</p>
-                <p className="text-sm text-gray-500">Cliquez sur &quot;Ajouter&quot; pour créer votre premier contexte</p>
+                <p className="text-sm text-muted-foreground">Cliquez sur &quot;Ajouter&quot; pour créer votre premier contexte</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -699,20 +699,20 @@ export default function ProfilePage() {
                     className={`flex items-center justify-between p-3 rounded-xl transition-all ${
                       ctx.is_active
                         ? 'bg-cyan-500/10 border border-cyan-500/30'
-                        : 'bg-white/5 border border-white/10'
+                        : 'bg-muted/50 border border-border'
                     }`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {ctx.context_type === 'text' ? (
-                        <Type className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-gray-400'}`} />
+                        <Type className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-muted-foreground'}`} />
                       ) : (
-                        <FileText className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-gray-400'}`} />
+                        <FileText className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-muted-foreground'}`} />
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${ctx.is_active ? 'text-cyan-400' : 'text-gray-300'}`}>
+                        <p className={`text-sm font-medium truncate ${ctx.is_active ? 'text-cyan-400' : 'text-foreground'}`}>
                           {ctx.name}
                         </p>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           {ctx.preview ? `${ctx.preview.substring(0, 50)}...` : ctx.filename || 'Document'}
                           {' • '}{formatBytes(ctx.content_size)}
                         </p>
@@ -755,7 +755,7 @@ export default function ProfilePage() {
             transition={{ delay: 0.3 }}
             className="glass-card"
           >
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
               <Lock className="w-5 h-5 text-[var(--axial-accent)]" />
               Changer le mot de passe
             </h3>
@@ -776,11 +776,11 @@ export default function ProfilePage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Mot de passe actuel
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <input
                     type={showPasswords ? 'text' : 'password'}
                     value={currentPassword}
@@ -802,11 +802,11 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Nouveau mot de passe
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <input
                     type={showPasswords ? 'text' : 'password'}
                     value={newPassword}
@@ -820,11 +820,11 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Confirmer le nouveau mot de passe
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <input
                     type={showPasswords ? 'text' : 'password'}
                     value={confirmPassword}

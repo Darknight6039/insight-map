@@ -60,16 +60,32 @@ Base.metadata.create_all(bind=engine)
 # Authentication
 # ============================================================================
 
-def resolve_supabase_user_id(supabase_uuid: str, db: Session) -> int:
-    """Resolve Supabase UUID to legacy integer user_id via mapping table"""
+def resolve_supabase_user_id(supabase_uuid: str, db: Session, email: str = None) -> int:
+    """Resolve Supabase UUID to legacy integer user_id via mapping table.
+    Auto-creates mapping for new users if none exists."""
     mapping = db.query(UserIdMapping).filter(
         UserIdMapping.supabase_user_id == supabase_uuid
     ).first()
     if mapping:
         return mapping.old_user_id
-    # Return 0 if no mapping found (should not happen for valid users)
-    logger.warning(f"No user_id mapping found for Supabase UUID: {supabase_uuid}")
-    return 0
+
+    # Auto-create mapping for new Supabase users
+    logger.info(f"Creating new user_id mapping for Supabase UUID: {supabase_uuid}")
+
+    # Find the next available old_user_id
+    max_id = db.query(func.max(UserIdMapping.old_user_id)).scalar() or 0
+    new_user_id = max_id + 1
+
+    new_mapping = UserIdMapping(
+        old_user_id=new_user_id,
+        supabase_user_id=supabase_uuid,
+        email=email or f"supabase_{supabase_uuid[:8]}@auto.local"
+    )
+    db.add(new_mapping)
+    db.commit()
+
+    logger.info(f"Created mapping: UUID {supabase_uuid} -> user_id {new_user_id}")
+    return new_user_id
 
 
 async def get_current_user_id(
@@ -101,10 +117,9 @@ async def get_current_user_id(
             # Try parsing as integer (legacy token)
             return int(user_id)
         except ValueError:
-            # It's a UUID (Supabase token) - resolve via mapping
-            resolved_id = resolve_supabase_user_id(str(user_id), db)
-            if resolved_id == 0:
-                raise HTTPException(status_code=401, detail="User mapping not found")
+            # It's a UUID (Supabase token) - resolve via mapping (auto-creates if needed)
+            email = payload.get("email")  # Extract email from JWT if available
+            resolved_id = resolve_supabase_user_id(str(user_id), db, email)
             return resolved_id
 
     except JWTError as e:
@@ -163,24 +178,16 @@ def resolve_user_id(user_id_input: str, db: Session) -> int:
     if user_id_input in _user_id_cache:
         return _user_id_cache[user_id_input]
 
-    # It's likely a UUID - look it up in the mapping table
+    # It's a UUID - use resolve_supabase_user_id which auto-creates mappings if needed
     try:
-        mapping = db.query(UserIdMapping).filter(
-            UserIdMapping.supabase_user_id == user_id_input
-        ).first()
-
-        if mapping:
-            # Cache the result
-            _user_id_cache[user_id_input] = mapping.old_user_id
-            logger.info(f"Resolved UUID {user_id_input[:8]}... to user_id {mapping.old_user_id}")
-            return mapping.old_user_id
-        else:
-            logger.warning(f"No mapping found for UUID {user_id_input}, defaulting to user_id=1")
-            return 1
+        resolved_id = resolve_supabase_user_id(user_id_input, db)
+        _user_id_cache[user_id_input] = resolved_id
+        logger.info(f"Resolved UUID {user_id_input[:8]}... to user_id {resolved_id}")
+        return resolved_id
 
     except Exception as e:
         logger.error(f"Error resolving user_id {user_id_input}: {e}")
-        return 1
+        raise HTTPException(status_code=404, detail=f"Unable to resolve user: {user_id_input}")
 
 
 def verify_internal_key(x_internal_key: str = Query(None, alias="x-internal-key")):
@@ -1048,6 +1055,42 @@ async def create_context_internal(
     logger.info(f"Context created internally for user {resolved_id}: {context.name}")
 
     return new_context
+
+
+# ============================================================================
+# Onboarding Status
+# ============================================================================
+
+@app.get("/internal/user/onboarding-status")
+async def check_onboarding_status(
+    user_id: str = Query(..., description="User ID (integer or UUID)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Check if user has completed onboarding (has a company_profile context).
+    Used by frontend to redirect new users to onboarding page.
+    """
+    try:
+        # Resolve user ID (handles both integer and UUID)
+        try:
+            resolved_id = int(user_id)
+        except ValueError:
+            resolved_id = resolve_supabase_user_id(user_id, db)
+
+        # Check if user has a company_profile context
+        has_company_profile = db.query(UserContext).filter(
+            UserContext.user_id == resolved_id,
+            UserContext.context_type == "company_profile"
+        ).first() is not None
+
+        return {
+            "completed": has_company_profile,
+            "user_id": resolved_id
+        }
+    except Exception as e:
+        logger.error(f"Error checking onboarding status for user {user_id}: {e}")
+        # Return completed=True on error to avoid blocking users
+        return {"completed": True, "user_id": None}
 
 
 # ============================================================================

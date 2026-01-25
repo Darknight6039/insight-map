@@ -18,6 +18,7 @@ from app.supabase_auth import (
     request_password_reset, reset_password, change_password, update_profile,
     list_users, toggle_user_active,
 )
+from app.supabase_client import get_supabase_admin_client
 
 # Legacy imports for database models and utility functions
 from app.auth import (
@@ -765,19 +766,19 @@ async def get_me(current_user: SupabaseUser = Depends(get_current_user)):
 @app.post("/admin/invite", response_model=InvitationResponse, tags=["Admin"])
 async def create_invite(
     data: InvitationCreate,
-    current_user: User = Depends(get_current_admin),
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
     Create a new invitation (admin only)
     """
-    invitation = create_invitation(db, current_user, data)
+    invitation = create_invitation(db, current_user.id, data)
     return InvitationResponse.model_validate(invitation)
 
 
 @app.get("/admin/invitations", response_model=List[InvitationResponse], tags=["Admin"])
-async def list_invitations(
-    current_user: User = Depends(get_current_admin),
+async def admin_list_invitations(
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -788,43 +789,48 @@ async def list_invitations(
 
 
 @app.get("/admin/users", response_model=List[UserResponse], tags=["Admin"])
-async def list_users(
-    current_user: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+async def admin_list_users(
+    current_user: SupabaseUser = Depends(get_current_admin)
 ):
     """
-    List all users (admin only)
+    List all users from Supabase Auth (admin only)
     """
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    return [UserResponse.model_validate(u) for u in users]
+    return await list_users()
 
 
 @app.patch("/admin/users/{user_id}/toggle-active", response_model=UserResponse, tags=["Admin"])
-async def toggle_user_active(
-    user_id: int,
-    current_user: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+async def admin_toggle_user_active(
+    user_id: str,
+    current_user: SupabaseUser = Depends(get_current_admin)
 ):
     """
-    Toggle user active status (admin only)
+    Toggle user active status in Supabase Auth (admin only)
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    
-    if user.id == current_user.id:
+    # Empêcher l'admin de désactiver son propre compte
+    if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Impossible de désactiver votre propre compte")
-    
-    user.is_active = not user.is_active
-    db.commit()
-    db.refresh(user)
-    
-    return UserResponse.model_validate(user)
+
+    # Récupérer l'état actuel de l'utilisateur
+    try:
+        client = get_supabase_admin_client()
+        user_response = client.auth.admin.get_user_by_id(user_id)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+        current_active = (user_response.user.app_metadata or {}).get("is_active", True)
+        new_active = not current_active
+
+        return await toggle_user_active(user_id, new_active)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling user active: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la mise à jour du statut")
 
 
 @app.get("/admin/password-resets", response_model=List[PasswordResetTokenResponse], tags=["Admin"])
-async def list_password_resets(
-    current_user: User = Depends(get_current_admin),
+async def admin_list_password_resets(
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -843,27 +849,39 @@ async def list_password_resets(
 
 @app.patch("/admin/users/{user_id}/reset-password", tags=["Admin"])
 async def admin_reset_user_password(
-    user_id: int,
-    current_user: User = Depends(get_current_admin),
+    user_id: str,
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Admin force reset a user's password and return the reset token
+    Admin force reset a user's password via Supabase and return the reset token
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    
-    reset_token = create_password_reset_token(db, user.email)
-    if not reset_token:
-        raise HTTPException(status_code=400, detail="Impossible de créer le token")
-    
-    return {
-        "message": "Token de réinitialisation créé",
-        "token": reset_token.token,
-        "expires_at": reset_token.expires_at,
-        "reset_url": f"/reset-password?token={reset_token.token}"
-    }
+    # Récupérer l'utilisateur depuis Supabase pour avoir son email
+    try:
+        client = get_supabase_admin_client()
+        user_response = client.auth.admin.get_user_by_id(user_id)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+        user_email = user_response.user.email
+        if not user_email:
+            raise HTTPException(status_code=400, detail="L'utilisateur n'a pas d'email")
+
+        reset_token = create_password_reset_token(db, user_email)
+        if not reset_token:
+            raise HTTPException(status_code=400, detail="Impossible de créer le token")
+
+        return {
+            "message": "Token de réinitialisation créé",
+            "token": reset_token.token,
+            "expires_at": reset_token.expires_at,
+            "reset_url": f"/reset-password?token={reset_token.token}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating password reset: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la création du token")
 
 
 # =============================================================================
@@ -930,43 +948,48 @@ async def check_reset_token(token: str, db: Session = Depends(get_db)):
 @app.post("/auth/change-password", tags=["Authentication"])
 async def do_change_password(
     data: PasswordChange,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Change password for authenticated user (requires current password)
+    Change password for authenticated user via Supabase (requires current password)
     """
     if len(data.new_password) < 6:
         raise HTTPException(
             status_code=400,
             detail="Le mot de passe doit contenir au moins 6 caractères"
         )
-    
-    success = change_password(db, current_user, data.current_password, data.new_password)
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="Mot de passe actuel incorrect"
-        )
-    
-    return {"message": "Mot de passe modifié avec succès"}
+
+    return await change_password(current_user, data.current_password, data.new_password)
 
 
 @app.patch("/auth/profile", response_model=UserResponse, tags=["Authentication"])
-async def update_profile(
+async def do_update_profile(
     full_name: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: SupabaseUser = Depends(get_current_user)
 ):
     """
-    Update user profile information
+    Update user profile information via Supabase
     """
     if full_name is not None:
-        current_user.full_name = full_name
-        db.commit()
-        db.refresh(current_user)
-    
-    return UserResponse.model_validate(current_user)
+        profile_data = ProfileUpdate(full_name=full_name)
+        updated_user = await update_profile(current_user, profile_data)
+        return UserResponse(
+            id=updated_user.id,
+            email=updated_user.email,
+            full_name=updated_user.full_name,
+            role=updated_user.role,
+            is_active=updated_user.is_active,
+            created_at=updated_user.created_at
+        )
+
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at
+    )
 
 
 # =============================================================================
@@ -977,7 +1000,7 @@ async def update_profile(
 async def get_dashboard_stats(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    current_user: User = Depends(get_current_admin),
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -985,7 +1008,7 @@ async def get_dashboard_stats(
     """
     today = datetime.utcnow().date()
     week_ago = today - timedelta(days=7)
-    
+
     # Parse dates if provided
     if start_date:
         try:
@@ -994,7 +1017,7 @@ async def get_dashboard_stats(
             start = week_ago
     else:
         start = week_ago
-    
+
     if end_date:
         try:
             end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -1002,10 +1025,17 @@ async def get_dashboard_stats(
             end = today
     else:
         end = today
-    
-    # Total users
-    total_users = db.query(User).count()
-    active_users = db.query(User).filter(User.is_active == True).count()
+
+    # Total users from Supabase Auth
+    try:
+        client = get_supabase_admin_client()
+        supabase_users = client.auth.admin.list_users()
+        total_users = len(supabase_users) if supabase_users else 0
+        active_users = sum(1 for u in supabase_users if (u.app_metadata or {}).get("is_active", True))
+    except Exception as e:
+        logger.warning(f"Could not fetch Supabase users for stats: {e}")
+        total_users = 0
+        active_users = 0
     
     # Count activities
     total_logins_today = db.query(ActivityLog).filter(
@@ -1073,17 +1103,17 @@ async def get_dashboard_activities(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     action: Optional[str] = Query(None, description="Filter by action type"),
-    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    user_id: Optional[str] = Query(None, description="Filter by user ID (UUID)"),
     skip: int = Query(0, description="Number of records to skip"),
     limit: int = Query(50, description="Maximum number of records"),
-    current_user: User = Depends(get_current_admin),
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
     Get recent activities for admin dashboard
     """
     query = db.query(ActivityLog)
-    
+
     # Apply filters
     if start_date:
         try:
@@ -1091,34 +1121,47 @@ async def get_dashboard_activities(
             query = query.filter(ActivityLog.created_at >= start)
         except ValueError:
             pass
-    
+
     if end_date:
         try:
             end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
             query = query.filter(ActivityLog.created_at < end)
         except ValueError:
             pass
-    
+
     if action:
         query = query.filter(ActivityLog.action == action)
-    
+
     if user_id:
         query = query.filter(ActivityLog.user_id == user_id)
-    
+
     # Get activities
     activities = query.order_by(ActivityLog.created_at.desc()).offset(skip).limit(limit).all()
-    
+
+    # Build cache of user info from Supabase
+    user_cache = {}
+    try:
+        client = get_supabase_admin_client()
+        supabase_users = client.auth.admin.list_users()
+        for u in supabase_users:
+            user_cache[str(u.id)] = {
+                "email": u.email,
+                "full_name": (u.user_metadata or {}).get("full_name")
+            }
+    except Exception as e:
+        logger.warning(f"Could not fetch Supabase users for activity log: {e}")
+
     # Build response with user info
     result = []
     for activity in activities:
         user_email = None
         user_name = None
         if activity.user_id:
-            user = db.query(User).filter(User.id == activity.user_id).first()
-            if user:
-                user_email = user.email
-                user_name = user.full_name
-        
+            user_info = user_cache.get(str(activity.user_id))
+            if user_info:
+                user_email = user_info["email"]
+                user_name = user_info["full_name"]
+
         result.append(ActivityLogResponse(
             id=activity.id,
             user_id=activity.user_id,
@@ -1130,14 +1173,14 @@ async def get_dashboard_activities(
             details=activity.details,
             created_at=activity.created_at
         ))
-    
+
     return result
 
 
 @app.get("/admin/dashboard/charts", response_model=DashboardCharts, tags=["Admin Dashboard"])
 async def get_dashboard_charts(
     days: int = Query(7, description="Number of days to include"),
-    current_user: User = Depends(get_current_admin),
+    current_user: SupabaseUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -1527,7 +1570,8 @@ async def upload_context_document(
 ):
     """
     Proxy endpoint to upload document context (PDF, DOCX, TXT)
-    Forwards the file to backend-service for text extraction and storage
+    Forwards the file to backend-service for text extraction and storage,
+    then syncs the document to memory-service for unified context management.
     """
     services = get_service_urls()
 
@@ -1546,7 +1590,31 @@ async def upload_context_document(
                 files=files
             )
             response.raise_for_status()
-            return response.json()
+            legacy_result = response.json()
+
+        # Sync document to memory-service for unified context listing
+        try:
+            extracted_content = legacy_result.get("content", "")
+            if extracted_content:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    await client.post(
+                        f"{services['memory']}/api/v1/contexts",
+                        json={
+                            "name": file.filename or "Document uploadé",
+                            "context_type": "document",
+                            "content": extracted_content,
+                            "filename": file.filename,
+                            "file_type": file.content_type,
+                            "is_active": True
+                        },
+                        headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+                    )
+                    logger.info(f"Document synced to memory-service for user {current_user.id}: {file.filename}")
+        except Exception as e:
+            # Log warning but don't fail the request - legacy upload succeeded
+            logger.warning(f"Failed to sync document to memory-service for user {current_user.id}: {e}")
+
+        return legacy_result
 
     except httpx.HTTPStatusError as e:
         # Forward backend error message to client

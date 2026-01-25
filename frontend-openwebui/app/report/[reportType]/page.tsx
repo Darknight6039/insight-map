@@ -7,7 +7,8 @@ import {
   Shield,
   Sparkles,
   BarChart3,
-  ArrowLeft
+  ArrowLeft,
+  Scale
 } from 'lucide-react'
 import MainLayout from '../../components/layout/MainLayout'
 import AnalysisPanel from '../../components/AnalysisPanel'
@@ -19,7 +20,8 @@ const analysisTypesConfig = [
   { id: 'analyse_concurrentielle', icon: TrendingUp, gradient: 'violet' as const, color: 'from-purple-500 to-pink-500' },
   { id: 'veille_technologique', icon: Sparkles, gradient: 'teal' as const, color: 'from-green-500 to-teal-500' },
   { id: 'analyse_risques', icon: Shield, gradient: 'orange' as const, color: 'from-red-500 to-orange-500' },
-  { id: 'etude_marche', icon: BarChart3, gradient: 'pink' as const, color: 'from-pink-500 to-rose-500' }
+  { id: 'etude_marche', icon: BarChart3, gradient: 'pink' as const, color: 'from-pink-500 to-rose-500' },
+  { id: 'analyse_reglementaire', icon: Scale, gradient: 'blue' as const, color: 'from-blue-600 to-indigo-500' }
 ]
 
 export default function ReportPage({ params }: { params: { reportType: string } }) {

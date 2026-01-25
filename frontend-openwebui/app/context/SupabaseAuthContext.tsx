@@ -49,7 +49,7 @@ interface SupabaseAuthContextType {
 const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(undefined)
 
 // Routes publiques (pas besoin d'être connecté)
-const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password']
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password', '/onboarding']
 
 // =============================================================================
 // PROVIDER
@@ -117,8 +117,30 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           // Actions spécifiques selon l'événement
           switch (event) {
             case 'SIGNED_IN':
+              // Vérifier si l'utilisateur a complété l'onboarding
+              if (newSession?.access_token) {
+                try {
+                  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+                  const memoryUrl = process.env.NEXT_PUBLIC_MEMORY_URL || 'http://localhost:8008'
+                  const userId = newSession.user?.id
+
+                  if (userId) {
+                    const response = await fetch(
+                      `${memoryUrl}/internal/user/onboarding-status?user_id=${userId}`
+                    )
+                    const data = await response.json()
+
+                    if (!data.completed && isPublicRoute) {
+                      router.push('/onboarding')
+                      break
+                    }
+                  }
+                } catch (err) {
+                  console.error('Error checking onboarding status:', err)
+                }
+              }
               // Rediriger vers la page d'accueil si on est sur une page publique
-              if (isPublicRoute) {
+              if (isPublicRoute && pathname !== '/onboarding') {
                 router.push('/')
               }
               break
@@ -156,8 +178,8 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       if (!user && !isPublicRoute) {
         // Utilisateur non connecté sur une route protégée
         router.push('/login')
-      } else if (user && isPublicRoute && pathname !== '/reset-password') {
-        // Utilisateur connecté sur une route publique (sauf reset-password)
+      } else if (user && isPublicRoute && pathname !== '/reset-password' && pathname !== '/onboarding') {
+        // Utilisateur connecté sur une route publique (sauf reset-password et onboarding)
         router.push('/')
       }
     }

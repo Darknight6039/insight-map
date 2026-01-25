@@ -6,7 +6,8 @@ import {
   TrendingUp,
   Shield,
   Sparkles,
-  BarChart3
+  BarChart3,
+  Scale
 } from 'lucide-react'
 import MainLayout from './components/layout/MainLayout'
 import HeroSection from './components/dashboard/HeroSection'
@@ -18,7 +19,8 @@ const analysisTypesConfig = [
   { id: 'analyse_concurrentielle', icon: TrendingUp, gradient: 'violet' as const },
   { id: 'veille_technologique', icon: Sparkles, gradient: 'teal' as const },
   { id: 'analyse_risques', icon: Shield, gradient: 'orange' as const },
-  { id: 'etude_marche', icon: BarChart3, gradient: 'pink' as const }
+  { id: 'etude_marche', icon: BarChart3, gradient: 'pink' as const },
+  { id: 'analyse_reglementaire', icon: Scale, gradient: 'blue' as const }
 ]
 
 export default function HomePage() {

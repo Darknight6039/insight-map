@@ -46,8 +46,9 @@ security = HTTPBearer()
 # =============================================================================
 
 class User(Base):
+    """Legacy User model - conservé pour compatibilité avec les anciennes données"""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
@@ -56,25 +57,20 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
-    
-    # Relationships
-    invitations_sent = relationship("Invitation", back_populates="created_by_user", foreign_keys="Invitation.created_by")
 
 
 class Invitation(Base):
     __tablename__ = "invitations"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, nullable=True)  # Optional: restrict to specific email
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # created_by peut être un UUID Supabase (string) ou null
+    created_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
-    used_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    
-    # Relationships
-    created_by_user = relationship("User", back_populates="invitations_sent", foreign_keys=[created_by])
+    used_by = Column(String, nullable=True)  # UUID Supabase
 
 
 class PasswordResetToken(Base):
@@ -95,17 +91,15 @@ class PasswordResetToken(Base):
 class ActivityLog(Base):
     """Log des activités utilisateur pour le monitoring admin"""
     __tablename__ = "activity_logs"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # user_id peut être un UUID Supabase (string) ou null
+    user_id = Column(String, nullable=True)
     action = Column(String, nullable=False)  # "login", "report_created", "chat", "search", etc.
     resource_type = Column(String, nullable=True)  # "report", "document", "watch"
     resource_id = Column(Integer, nullable=True)
     details = Column(Text, nullable=True)  # JSON metadata
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    
-    # Relationships
-    user = relationship("User")
 
 
 # =============================================================================
@@ -189,7 +183,7 @@ class PasswordResetTokenResponse(BaseModel):
 # Activity log schemas
 class ActivityLogResponse(BaseModel):
     id: int
-    user_id: Optional[int]
+    user_id: Optional[str]  # UUID Supabase
     user_email: Optional[str] = None
     user_name: Optional[str] = None
     action: str
@@ -197,7 +191,7 @@ class ActivityLogResponse(BaseModel):
     resource_id: Optional[int]
     details: Optional[str]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -431,12 +425,12 @@ def validate_invitation(db: Session, code: str, email: Optional[str] = None) -> 
     return invitation
 
 
-def create_invitation(db: Session, admin_user: User, data: InvitationCreate) -> Invitation:
-    """Create a new invitation"""
+def create_invitation(db: Session, admin_user_id: Optional[str], data: InvitationCreate) -> Invitation:
+    """Create a new invitation. admin_user_id can be a Supabase UUID string or None."""
     invitation = Invitation(
         code=generate_invitation_code(),
         email=data.email,
-        created_by=admin_user.id,
+        created_by=admin_user_id,
         expires_at=datetime.utcnow() + timedelta(days=data.expires_in_days)
     )
     db.add(invitation)

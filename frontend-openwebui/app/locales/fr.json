@@ -270,6 +270,39 @@
       "sante": "Santé",
       "energie": "Énergie"
     }
+  },
+  "onboarding": {
+    "title": "Configurez votre profil entreprise",
+    "subtitle": "Ces informations permettront de personnaliser vos analyses",
+    "step1": {
+      "title": "Informations générales",
+      "orgName": "Nom de l'organisation",
+      "orgNamePlaceholder": "Votre entreprise",
+      "country": "Pays",
+      "countryPlaceholder": "Sélectionnez un pays",
+      "orgType": "Type d'organisation",
+      "supportStructure": "Structure d'accompagnement",
+      "other": "Autre",
+      "otherPlaceholder": "Précisez..."
+    },
+    "step2": {
+      "startupTitle": "Informations startup",
+      "structureTitle": "Informations structure",
+      "sector": "Secteur d'activité",
+      "sectorPlaceholder": "Sélectionnez un secteur",
+      "employees": "Nombre d'employés",
+      "employeesPlaceholder": "Sélectionnez une tranche",
+      "revenue": "Chiffre d'affaires",
+      "revenuePlaceholder": "Sélectionnez une tranche",
+      "stage": "Stade de développement",
+      "stagePlaceholder": "Sélectionnez un stade",
+      "technologies": "Technologies utilisées",
+      "isAIStartup": "Votre startup se considère-t-elle comme une startup IA ?",
+      "aiTypes": "Types d'IA utilisée"
+    },
+    "skip": "Passer cette étape",
+    "finish": "Terminer",
+    "saving": "Enregistrement..."
   }
 }
 

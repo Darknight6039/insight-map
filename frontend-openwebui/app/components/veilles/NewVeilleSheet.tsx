@@ -83,7 +83,7 @@ const reportTypes = [
   { id: "veille_technologique", label: "Veille Technologique" },
   { id: "analyse_risques", label: "Analyse des Risques" },
   { id: "etude_marche", label: "Étude de Marché" },
-  { id: "analyse_approfondie", label: "Analyse Approfondie" },
+  { id: "analyse_reglementaire", label: "Analyse Réglementaire" },
 ]
 
 const hours = Array.from({ length: 24 }, (_, i) => ({
