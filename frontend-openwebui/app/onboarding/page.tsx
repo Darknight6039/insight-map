@@ -78,7 +78,7 @@ const accompanimentTypeOptions = ['Mentorat', 'Financement', 'Go-to-market', 'Pr
 export default function OnboardingPage() {
   const { t } = useTranslation()
   const router = useRouter()
-  const { token } = useSupabaseAuth()
+  const { token, refreshOnboardingStatus, skipOnboarding } = useSupabaseAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<OnboardingData>(initialData)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -168,9 +168,12 @@ export default function OnboardingPage() {
       setIsSubmitting(false)
 
       if (success) {
+        // Rafraîchir le statut onboarding dans le contexte
+        await refreshOnboardingStatus()
         router.push('/')
       } else {
         console.error('Failed to save company profile')
+        // Même en cas d'échec, permettre l'accès à l'app
         router.push('/')
       }
     }
@@ -182,7 +185,10 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
+    setIsSubmitting(true)
+    await skipOnboarding()
+    setIsSubmitting(false)
     router.push('/')
   }
 

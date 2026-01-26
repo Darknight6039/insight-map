@@ -30,7 +30,7 @@ import {
 interface ContextItem {
   id: number
   name: string
-  context_type: 'text' | 'document'
+  context_type: 'text' | 'document' | 'company_profile'
   preview?: string
   filename?: string
   file_type?: string
@@ -205,7 +205,8 @@ export default function ProfilePage() {
           setStorageQuota(quotaData)
         }
       } catch (err) {
-        console.log('Error fetching contexts:', err)
+        console.error('Error fetching contexts:', err)
+        setContextError('Erreur lors du chargement des contextes')
       } finally {
         setIsLoadingContexts(false)
       }
@@ -234,24 +235,39 @@ export default function ProfilePage() {
         content = contextText
         if (!content) throw new Error('Veuillez entrer du contenu')
       } else if (contextDocument) {
-        // Read document content (for now, use filename as content placeholder)
-        // The actual content extraction will happen server-side
+        // Upload document directly to memory-service via gateway
         const formData = new FormData()
         formData.append('file', contextDocument)
-        const uploadRes = await fetch(`${API_URL}/context/upload`, {
+
+        // Build URL with optional custom name
+        let uploadUrl = `${API_URL}/api/contexts/upload`
+        if (contextName) {
+          uploadUrl += `?name=${encodeURIComponent(contextName)}`
+        }
+
+        const uploadRes = await fetch(uploadUrl, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: formData
         })
-        if (!uploadRes.ok) throw new Error('Erreur lors de l\'upload')
-        // Refresh contexts after upload
-        const ctxRes = await fetch(`${API_URL}/api/contexts`, {
+
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json().catch(() => ({}))
+          throw new Error(errorData.detail || 'Erreur lors de l\'upload')
+        }
+
+        // Get the created context from response
+        const newContext = await uploadRes.json()
+        setContexts(prev => [newContext, ...prev])
+
+        // Refresh quota
+        const quotaRes = await fetch(`${API_URL}/api/contexts/quota`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
-        if (ctxRes.ok) {
-          const data = await ctxRes.json()
-          setContexts(data.contexts || [])
+        if (quotaRes.ok) {
+          setStorageQuota(await quotaRes.json())
         }
+
         setContextSuccess(true)
         setShowAddContext(false)
         resetContextForm()
@@ -326,6 +342,9 @@ export default function ProfilePage() {
         if (quotaRes.ok) {
           setStorageQuota(await quotaRes.json())
         }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        setContextError(errorData.detail || 'Erreur lors de la suppression du contexte')
       }
     } catch (err) {
       setContextError('Erreur lors de la suppression')
@@ -345,6 +364,9 @@ export default function ProfilePage() {
       if (response.ok) {
         const updatedContext = await response.json()
         setContexts(prev => prev.map(c => c.id === contextId ? updatedContext : c))
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        setContextError(errorData.detail || 'Erreur lors de la mise à jour du contexte')
       }
     } catch (err) {
       setContextError('Erreur lors de la mise à jour')
@@ -703,7 +725,9 @@ export default function ProfilePage() {
                     }`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {ctx.context_type === 'text' ? (
+                      {ctx.context_type === 'company_profile' ? (
+                        <Building className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-muted-foreground'}`} />
+                      ) : ctx.context_type === 'text' ? (
                         <Type className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-muted-foreground'}`} />
                       ) : (
                         <FileText className={`w-5 h-5 flex-shrink-0 ${ctx.is_active ? 'text-cyan-400' : 'text-muted-foreground'}`} />

@@ -34,11 +34,17 @@ interface SupabaseAuthContextType {
   isAdmin: boolean
   error: string | null
 
+  // Onboarding status
+  onboardingCompleted: boolean | null
+  isCheckingOnboarding: boolean
+
   // Actions
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, fullName: string, invitationCode: string) => Promise<void>
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
+  refreshOnboardingStatus: () => Promise<boolean | null>
+  skipOnboarding: () => Promise<boolean>
   clearError: () => void
 }
 
@@ -61,12 +67,83 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Onboarding status tracking
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null)
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false)
+
   const router = useRouter()
   const pathname = usePathname()
 
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname || '')
   const isAuthenticated = !!user
   const isAdmin = checkIsAdmin(user)
+
+  // ---------------------------------------------------------------------------
+  // Onboarding Status Check
+  // ---------------------------------------------------------------------------
+
+  const checkOnboardingStatus = useCallback(async (userId: string): Promise<boolean | null> => {
+    try {
+      setIsCheckingOnboarding(true)
+      const memoryUrl = process.env.NEXT_PUBLIC_MEMORY_URL || 'http://localhost:8008'
+      const response = await fetch(
+        `${memoryUrl}/internal/user/onboarding-status?user_id=${userId}`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setOnboardingCompleted(data.completed)
+        return data.completed
+      }
+      // If API fails, assume onboarding is completed to not block users
+      setOnboardingCompleted(true)
+      return true
+    } catch (err) {
+      console.error('Error checking onboarding status:', err)
+      // Fail-safe: assume completed to not block users
+      setOnboardingCompleted(true)
+      return true
+    } finally {
+      setIsCheckingOnboarding(false)
+    }
+  }, [])
+
+  const refreshOnboardingStatus = useCallback(async (): Promise<boolean | null> => {
+    if (user?.id) {
+      return await checkOnboardingStatus(user.id)
+    }
+    return null
+  }, [user?.id, checkOnboardingStatus])
+
+  const skipOnboarding = useCallback(async (): Promise<boolean> => {
+    // Créer un company_profile minimal pour marquer l'onboarding comme "passé"
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+      const response = await fetch(`${apiUrl}/api/contexts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'Profil (à compléter)',
+          context_type: 'company_profile',
+          content: '# Profil Entreprise\n\n*Onboarding passé - Vous pouvez compléter ce profil plus tard dans les paramètres.*',
+          is_active: true
+        })
+      })
+
+      if (response.ok) {
+        setOnboardingCompleted(true)
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('Error skipping onboarding:', err)
+      // En cas d'erreur, permettre quand même de passer (UX)
+      setOnboardingCompleted(true)
+      return true
+    }
+  }, [session?.access_token])
 
   // ---------------------------------------------------------------------------
   // Session Management
@@ -94,6 +171,12 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
         if (mounted) {
           handleSession(initialSession)
+
+          // Vérifier le statut onboarding si l'utilisateur est connecté
+          if (initialSession?.user?.id) {
+            await checkOnboardingStatus(initialSession.user.id)
+          }
+
           setIsLoading(false)
         }
       } catch (err) {
@@ -117,32 +200,11 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           // Actions spécifiques selon l'événement
           switch (event) {
             case 'SIGNED_IN':
-              // Vérifier si l'utilisateur a complété l'onboarding
-              if (newSession?.access_token) {
-                try {
-                  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-                  const memoryUrl = process.env.NEXT_PUBLIC_MEMORY_URL || 'http://localhost:8008'
-                  const userId = newSession.user?.id
-
-                  if (userId) {
-                    const response = await fetch(
-                      `${memoryUrl}/internal/user/onboarding-status?user_id=${userId}`
-                    )
-                    const data = await response.json()
-
-                    if (!data.completed && isPublicRoute) {
-                      router.push('/onboarding')
-                      break
-                    }
-                  }
-                } catch (err) {
-                  console.error('Error checking onboarding status:', err)
-                }
+              // Vérifier le statut onboarding - la redirection est gérée par le useEffect
+              if (newSession?.user?.id) {
+                await checkOnboardingStatus(newSession.user.id)
               }
-              // Rediriger vers la page d'accueil si on est sur une page publique
-              if (isPublicRoute && pathname !== '/onboarding') {
-                router.push('/')
-              }
+              // Note: La redirection est gérée par le useEffect de redirection
               break
 
             case 'SIGNED_OUT':
@@ -170,20 +232,33 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       mounted = false
       subscription.unsubscribe()
     }
-  }, [handleSession, router, isPublicRoute])
+  }, [handleSession, router, checkOnboardingStatus])
 
-  // Redirection basée sur l'état d'authentification
+  // Redirection basée sur l'état d'authentification ET le statut onboarding
   useEffect(() => {
-    if (!isLoading) {
-      if (!user && !isPublicRoute) {
-        // Utilisateur non connecté sur une route protégée
-        router.push('/login')
-      } else if (user && isPublicRoute && pathname !== '/reset-password' && pathname !== '/onboarding') {
-        // Utilisateur connecté sur une route publique (sauf reset-password et onboarding)
-        router.push('/')
-      }
+    // Attendre que le chargement initial et la vérification onboarding soient terminés
+    if (isLoading || isCheckingOnboarding) return
+
+    // Cas 1: Utilisateur non connecté sur une route protégée → login
+    if (!user && !isPublicRoute) {
+      router.push('/login')
+      return
     }
-  }, [user, isLoading, isPublicRoute, router, pathname])
+
+    // Cas 2: Utilisateur connecté mais onboarding non complété → forcer onboarding
+    if (user && onboardingCompleted === false && pathname !== '/onboarding') {
+      router.push('/onboarding')
+      return
+    }
+
+    // Cas 3: Utilisateur connecté + onboarding complété + sur route publique → home
+    // Exception: reset-password doit rester accessible
+    if (user && onboardingCompleted === true && isPublicRoute &&
+        pathname !== '/reset-password') {
+      router.push('/')
+      return
+    }
+  }, [user, isLoading, isCheckingOnboarding, onboardingCompleted, isPublicRoute, router, pathname])
 
   // ---------------------------------------------------------------------------
   // Auth Actions
@@ -242,6 +317,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       await supabaseSignOut()
       setUser(null)
       setSession(null)
+      setOnboardingCompleted(null)  // Reset onboarding status
       router.push('/login')
     } catch (err: any) {
       console.error('Sign out error:', err)
@@ -274,10 +350,14 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     isAuthenticated,
     isAdmin,
     error,
+    onboardingCompleted,
+    isCheckingOnboarding,
     signIn,
     signUp,
     signOut,
     refreshUser,
+    refreshOnboardingStatus,
+    skipOnboarding,
     clearError,
   }
 

@@ -5,7 +5,7 @@ Handles conversation history and document storage for Insight MVP
 import os
 from datetime import datetime
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
@@ -27,6 +27,7 @@ from app.schemas import (
     ContextListResponse, StorageQuotaResponse, InternalContextCreate
 )
 from app.migration import migrate_user_data, check_migration_status
+from app.text_extractor import extract_text_from_file
 
 # Configuration
 # Prioritize Supabase JWT secret for token validation
@@ -974,6 +975,84 @@ async def delete_context(
     db.commit()
 
     logger.info(f"Context deleted for user {user_id}: {context.name}")
+
+
+@app.post("/api/v1/contexts/upload", response_model=ContextResponse, status_code=201)
+async def upload_context_document(
+    file: UploadFile = File(...),
+    name: Optional[str] = Query(None, description="Custom name for the context"),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a document (PDF, DOCX, TXT) and create a context from extracted text.
+    This replaces the legacy backend-service upload - everything is now in memory-service.
+    """
+    # Validate file type
+    filename = file.filename or "document"
+    file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+
+    allowed_types = {'pdf', 'docx', 'txt'}
+    if file_ext not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Type de fichier non supporté: {file_ext}. Types acceptés: {', '.join(allowed_types)}"
+        )
+
+    # Read file content
+    file_content = await file.read()
+
+    # Check file size (max 10MB)
+    if len(file_content) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail="Fichier trop volumineux (max 10 Mo)"
+        )
+
+    # Extract text from file
+    extracted_text = extract_text_from_file(file_content, file_ext)
+
+    if not extracted_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossible d'extraire le texte du document. Vérifiez que le fichier n'est pas vide ou corrompu."
+        )
+
+    # Calculate content size
+    content_size = len(extracted_text.encode('utf-8'))
+
+    # Check quota
+    quota = get_or_create_quota(user_id, db)
+    if quota.total_used_bytes + content_size > quota.max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Quota de stockage dépassé. Utilisé: {quota.total_used_bytes} bytes, Limite: {quota.max_bytes} bytes"
+        )
+
+    # Create context
+    context_name = name or filename.rsplit('.', 1)[0] if '.' in filename else filename
+    new_context = UserContext(
+        user_id=user_id,
+        name=context_name,
+        context_type="document",
+        content=extracted_text,
+        preview=extracted_text[:200] if extracted_text else None,
+        filename=filename,
+        file_type=file_ext,
+        content_size=content_size,
+        is_active=True
+    )
+    db.add(new_context)
+
+    # Update quota
+    quota.total_used_bytes += content_size
+
+    db.commit()
+    db.refresh(new_context)
+
+    logger.info(f"Document uploaded for user {user_id}: {filename} ({content_size} bytes)")
+
+    return new_context
 
 
 @app.get("/internal/contexts/active")

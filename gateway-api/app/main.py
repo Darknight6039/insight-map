@@ -1684,6 +1684,44 @@ async def create_context(
         raise HTTPException(status_code=e.response.status_code, detail=error_detail)
 
 
+@app.post("/api/contexts/upload")
+async def upload_context_document_new(
+    file: UploadFile = File(...),
+    name: Optional[str] = Query(None),
+    current_user: SupabaseUser = Depends(get_current_user)
+):
+    """
+    Upload a document and create a context (PDF, DOCX, TXT).
+    Routes directly to memory-service for unified context management.
+    """
+    services = get_service_urls()
+
+    try:
+        file_content = await file.read()
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": (file.filename, file_content, file.content_type)}
+            params = {}
+            if name:
+                params["name"] = name
+
+            response = await client.post(
+                f"{services['memory']}/api/v1/contexts/upload",
+                files=files,
+                params=params,
+                headers={"Authorization": f"Bearer {create_access_token(data={'sub': str(current_user.id)})}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.HTTPStatusError as e:
+        try:
+            error_detail = e.response.json().get("detail", "Erreur lors de l'upload")
+        except Exception:
+            error_detail = "Erreur lors de l'upload du document"
+        raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+
+
 @app.get("/api/contexts/quota")
 async def get_storage_quota(current_user: SupabaseUser = Depends(get_current_user)):
     """Get user's storage quota"""
