@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslation } from '../context/LanguageContext'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -14,6 +15,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 export default function ResetPasswordPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { t } = useTranslation()
   const token = searchParams.get('token')
 
   const [newPassword, setNewPassword] = useState('')
@@ -31,7 +33,7 @@ export default function ResetPasswordPage() {
     const validateToken = async () => {
       if (!token) {
         setIsValidating(false)
-        setError('Token manquant')
+        setError(t('resetPassword.errors.invalidLink'))
         return
       }
 
@@ -42,10 +44,10 @@ export default function ResetPasswordPage() {
           setIsValid(true)
           setEmail(data.email)
         } else {
-          setError('Ce lien est invalide ou a expiré')
+          setError(t('resetPassword.errors.invalidLink'))
         }
       } catch (err) {
-        setError('Erreur de connexion au serveur')
+        setError(t('chat.connectionError'))
       } finally {
         setIsValidating(false)
       }
@@ -59,12 +61,12 @@ export default function ResetPasswordPage() {
     setError('')
 
     if (newPassword !== confirmPassword) {
-      setError('Les mots de passe ne correspondent pas')
+      setError(t('resetPassword.errors.mismatch'))
       return
     }
 
     if (newPassword.length < 6) {
-      setError('Le mot de passe doit contenir au moins 6 caractères')
+      setError(t('resetPassword.errors.minLength'))
       return
     }
 
@@ -84,10 +86,10 @@ export default function ResetPasswordPage() {
         }, 3000)
       } else {
         const data = await response.json()
-        setError(data.detail || 'Une erreur est survenue')
+        setError(data.detail || t('common.error'))
       }
     } catch (err) {
-      setError('Erreur de connexion au serveur')
+      setError(t('chat.connectionError'))
     } finally {
       setIsLoading(false)
     }
@@ -112,7 +114,7 @@ export default function ResetPasswordPage() {
           </div>
           {isValid && email && (
             <p className="text-muted-foreground mt-4">
-              Compte : <span className="text-foreground font-medium">{email}</span>
+              {t('resetPassword.account') || 'Account:'} <span className="text-foreground font-medium">{email}</span>
             </p>
           )}
         </div>
@@ -120,9 +122,9 @@ export default function ResetPasswordPage() {
         {/* Main Card */}
         <Card className="border-border/50 shadow-xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-xl">Réinitialiser le mot de passe</CardTitle>
+            <CardTitle className="text-xl">{t('resetPassword.title')}</CardTitle>
             <CardDescription>
-              Choisissez un nouveau mot de passe sécurisé
+              {t('resetPassword.description')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -132,16 +134,16 @@ export default function ResetPasswordPage() {
                   <AlertCircle className="w-8 h-8 text-destructive" />
                 </div>
                 <h2 className="text-xl font-semibold text-foreground mb-2">
-                  Lien invalide
+                  {t('resetPassword.invalidLink')}
                 </h2>
                 <p className="text-muted-foreground text-sm mb-4">
-                  {error || 'Ce lien de réinitialisation est invalide ou a expiré.'}
+                  {error || t('resetPassword.invalidLinkMessage')}
                 </p>
                 <Link
                   href="/forgot-password"
                   className="text-primary hover:underline text-sm"
                 >
-                  Demander un nouveau lien
+                  {t('resetPassword.requestNewLink')}
                 </Link>
               </div>
             ) : isSuccess ? (
@@ -150,10 +152,10 @@ export default function ResetPasswordPage() {
                   <CheckCircle className="w-8 h-8 text-green-500" />
                 </div>
                 <h2 className="text-xl font-semibold text-foreground mb-2">
-                  Mot de passe modifié
+                  {t('resetPassword.passwordChanged')}
                 </h2>
                 <p className="text-muted-foreground text-sm">
-                  Redirection vers la page de connexion...
+                  {t('resetPassword.redirecting')}
                 </p>
               </div>
             ) : (
@@ -166,7 +168,7 @@ export default function ResetPasswordPage() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+                  <Label htmlFor="newPassword">{t('resetPassword.newPassword')}</Label>
                   <div className="relative">
                     <Input
                       id="newPassword"
@@ -195,7 +197,7 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+                  <Label htmlFor="confirmPassword">{t('resetPassword.confirmPassword')}</Label>
                   <Input
                     id="confirmPassword"
                     type={showPassword ? 'text' : 'password'}
@@ -213,7 +215,7 @@ export default function ResetPasswordPage() {
                   ) : (
                     <Lock className="h-4 w-4" />
                   )}
-                  Réinitialiser le mot de passe
+                  {t('resetPassword.submit')}
                 </Button>
               </form>
             )}
@@ -225,7 +227,7 @@ export default function ResetPasswordPage() {
                 className="inline-flex items-center gap-2 text-primary hover:underline text-sm"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Retour à la connexion
+                {t('resetPassword.backToLogin')}
               </Link>
             </div>
           </CardContent>
@@ -233,7 +235,7 @@ export default function ResetPasswordPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © {new Date().getFullYear()} Axial Intelligence. Tous droits réservés.
+          © {new Date().getFullYear()} Axial Intelligence. {t('common.allRightsReserved')}
         </p>
       </div>
     </div>

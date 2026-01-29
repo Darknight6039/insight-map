@@ -7,10 +7,12 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { useTranslation } from '../context/LanguageContext'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -32,10 +34,10 @@ export default function ForgotPasswordPage() {
         setIsSubmitted(true)
       } else {
         const data = await response.json()
-        setError(data.detail || 'Une erreur est survenue')
+        setError(data.detail || t('common.error'))
       }
     } catch (err) {
-      setError('Erreur de connexion au serveur')
+      setError(t('chat.connectionError'))
     } finally {
       setIsLoading(false)
     }
@@ -51,16 +53,16 @@ export default function ForgotPasswordPage() {
             <span className="text-sm font-medium tracking-[0.3em] text-muted-foreground uppercase">Intelligence</span>
           </div>
           <p className="text-muted-foreground mt-4">
-            Récupération de mot de passe
+            {t('forgotPassword.tagline')}
           </p>
         </div>
 
         {/* Main Card */}
         <Card className="border-border/50 shadow-xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-xl">Mot de passe oublié</CardTitle>
+            <CardTitle className="text-xl">{t('forgotPassword.title')}</CardTitle>
             <CardDescription>
-              Entrez votre email pour demander une réinitialisation
+              {t('forgotPassword.description')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -74,7 +76,7 @@ export default function ForgotPasswordPage() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Adresse email</Label>
+                  <Label htmlFor="email">{t('login.email')}</Label>
                   <Input
                     id="email"
                     type="email"
@@ -92,7 +94,7 @@ export default function ForgotPasswordPage() {
                   ) : (
                     <Send className="h-4 w-4" />
                   )}
-                  Envoyer la demande
+                  {t('forgotPassword.submit')}
                 </Button>
               </form>
             ) : (
@@ -101,14 +103,13 @@ export default function ForgotPasswordPage() {
                   <CheckCircle className="w-8 h-8 text-green-500" />
                 </div>
                 <h2 className="text-xl font-semibold text-foreground mb-2">
-                  Demande envoyée
+                  {t('forgotPassword.successTitle')}
                 </h2>
                 <p className="text-muted-foreground text-sm mb-4">
-                  Si cet email est associé à un compte, un administrateur pourra vous fournir
-                  un lien de réinitialisation.
+                  {t('forgotPassword.successMessage')}
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  Contactez votre administrateur pour obtenir le lien.
+                  {t('forgotPassword.contactAdmin')}
                 </p>
               </div>
             )}
@@ -120,7 +121,7 @@ export default function ForgotPasswordPage() {
                 className="inline-flex items-center gap-2 text-primary hover:underline text-sm"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Retour à la connexion
+                {t('forgotPassword.backToLogin')}
               </Link>
             </div>
           </CardContent>
@@ -128,7 +129,7 @@ export default function ForgotPasswordPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © {new Date().getFullYear()} Axial Intelligence. Tous droits réservés.
+          © {new Date().getFullYear()} Axial Intelligence. {t('common.allRightsReserved')}
         </p>
       </div>
     </div>

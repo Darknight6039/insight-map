@@ -20,7 +20,13 @@
     "success": "Succès",
     "failed": "Échoué",
     "pending": "En attente",
-    "running": "En cours"
+    "running": "En cours",
+    "activate": "Activer",
+    "deactivate": "Désactiver",
+    "copied": "Copié !",
+    "allRightsReserved": "Tous droits réservés.",
+    "characters": "caractères",
+    "storageUsed": "Stockage utilisé"
   },
   "nav": {
     "reports": "Rapports",
@@ -31,7 +37,13 @@
     "profile": "Mon profil",
     "admin": "Administration",
     "user": "Utilisateur",
-    "systemOperational": "Système opérationnel"
+    "systemOperational": "Système opérationnel",
+    "library": "Bibliothèque",
+    "history": "Historique",
+    "pricing": "Tarifs",
+    "login": "Connexion",
+    "backToDashboard": "Retour au Dashboard",
+    "backToMainMenu": "Retour au menu principal"
   },
   "home": {
     "tagline": "Transformez vos données en décisions. Intelligence stratégique alimentée par IA.",
@@ -72,7 +84,36 @@
     "reportSuccess": "Rapport généré avec succès !",
     "pdfSuccess": "PDF téléchargé avec succès !",
     "pdfGenerating": "Génération du PDF...",
-    "pdfError": "Erreur lors de l'export PDF"
+    "pdfError": "Erreur lors de l'export PDF",
+    "cancelAnalysis": "Annuler l'analyse",
+    "analysisCancelled": "Analyse annulée",
+    "cancelledByUser": "Analyse annulée par l'utilisateur",
+    "realtimeActivity": "Activité en temps réel",
+    "elapsed": "écoulé",
+    "calculating": "Calcul...",
+    "fast": "rapide",
+    "normal": "normal",
+    "slow": "lent",
+    "steps": {
+      "documentResearch": "Recherche documentaire",
+      "contextAnalysis": "Analyse contextuelle",
+      "dataCrossReference": "Croisement de données",
+      "sourceAnalysis": "Analyse des sources",
+      "finalization": "Finalisation"
+    },
+    "logs": {
+      "initializing": "Initialisation de l'analyse...",
+      "connecting": "Connexion au backend...",
+      "connectionEstablished": "Connexion établie, streaming démarré",
+      "streamingNotSupported": "Streaming non supporté",
+      "reportGenerated": "Rapport généré avec succès !"
+    },
+    "errors": {
+      "enterQuery": "Veuillez entrer une requête d'analyse",
+      "httpError": "Erreur HTTP",
+      "pdfExportError": "Erreur lors de l'export PDF",
+      "pdfDownloadError": "Erreur lors du téléchargement PDF"
+    }
   },
   "login": {
     "welcome": "Bienvenue",
@@ -80,6 +121,7 @@
     "connectToAccess": "Connectez-vous pour accéder à la plateforme",
     "joinPlatform": "Rejoignez la plateforme d'intelligence stratégique",
     "fullName": "Nom complet",
+    "fullNamePlaceholder": "Jean Dupont",
     "email": "Adresse email",
     "emailPlaceholder": "vous@entreprise.com",
     "password": "Mot de passe",
@@ -90,7 +132,41 @@
     "signIn": "Se connecter",
     "createMyAccount": "Créer mon compte",
     "haveInvitation": "Vous avez un code d'invitation ?",
-    "alreadyHaveAccount": "Vous avez déjà un compte ?"
+    "alreadyHaveAccount": "Vous avez déjà un compte ?",
+    "enterCredentials": "Entrez vos identifiants pour continuer",
+    "fillForm": "Remplissez le formulaire pour créer votre compte",
+    "seePricing": "Voir les tarifs",
+    "connection": "Connexion"
+  },
+  "forgotPassword": {
+    "tagline": "Récupération de mot de passe",
+    "title": "Mot de passe oublié",
+    "description": "Entrez votre email pour demander une réinitialisation",
+    "emailPlaceholder": "vous@entreprise.com",
+    "submit": "Envoyer la demande",
+    "successTitle": "Demande envoyée",
+    "successMessage": "Si cet email est associé à un compte, un administrateur pourra vous fournir un lien de réinitialisation.",
+    "contactAdmin": "Contactez votre administrateur pour obtenir le lien.",
+    "backToLogin": "Retour à la connexion"
+  },
+  "resetPassword": {
+    "title": "Réinitialiser le mot de passe",
+    "description": "Choisissez un nouveau mot de passe sécurisé",
+    "account": "Compte :",
+    "invalidLink": "Lien invalide",
+    "invalidLinkMessage": "Ce lien de réinitialisation est invalide ou a expiré.",
+    "requestNewLink": "Demander un nouveau lien",
+    "passwordChanged": "Mot de passe modifié",
+    "redirecting": "Redirection vers la page de connexion...",
+    "newPassword": "Nouveau mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "submit": "Réinitialiser le mot de passe",
+    "backToLogin": "Retour à la connexion",
+    "errors": {
+      "invalidLink": "Ce lien est invalide ou a expiré",
+      "minLength": "Le mot de passe doit contenir au moins 6 caractères",
+      "mismatch": "Les mots de passe ne correspondent pas"
+    }
   },
   "admin": {
     "title": "Administration",
@@ -136,6 +212,10 @@
     "noData": "Aucune donnée disponible",
     "startDate": "Date de début",
     "endDate": "Date de fin",
+    "activities": "activités",
+    "unknownUser": "Utilisateur inconnu",
+    "searches": "Recherches",
+    "creationError": "Erreur lors de la création",
     "actions": {
       "loggedIn": "s'est connecté",
       "createdReport": "a créé un rapport",
@@ -208,18 +288,18 @@
     "reportType": "Type de rapport",
     "keywords": "Mots-clés (séparés par des virgules)",
     "keywordsPlaceholder": "Ex: taux, BCE, inflation, crédit",
-    "executionFrequency": "Frequence d'execution",
+    "executionFrequency": "Fréquence d'exécution",
     "frequencyDaily": "Quotidien",
     "frequencyWeekly": "Hebdomadaire",
     "frequencyMonthly": "Mensuel",
-    "frequencyCustom": "Personnalise",
-    "frequencyDailyDesc": "Chaque jour a l'heure choisie",
+    "frequencyCustom": "Personnalisé",
+    "frequencyDailyDesc": "Chaque jour à l'heure choisie",
     "frequencyWeeklyDesc": "Certains jours de la semaine",
-    "frequencyMonthlyDesc": "Un jour specifique du mois",
-    "frequencyCustomDesc": "Configuration avancee",
-    "selectDays": "Jours d'execution",
+    "frequencyMonthlyDesc": "Un jour spécifique du mois",
+    "frequencyCustomDesc": "Configuration avancée",
+    "selectDays": "Jours d'exécution",
     "selectDayOfMonth": "Jour du mois",
-    "executionTime": "Heure d'execution",
+    "executionTime": "Heure d'exécution",
     "minute": "Minute",
     "hour": "Heure",
     "dayOfWeek": "Jour de la semaine",
@@ -236,8 +316,10 @@
     "history": "Historique",
     "noHistory": "Aucune exécution enregistrée",
     "triggerSuccess": "Veille déclenchée avec succès !",
+    "triggerError": "Erreur lors du déclenchement",
     "deleteConfirm": "Êtes-vous sûr de vouloir supprimer cette veille ?",
     "loadError": "Impossible de charger les veilles",
+    "executeNow": "Exécuter maintenant",
     "days": {
       "sunday": "Dimanche",
       "monday": "Lundi",
@@ -269,6 +351,13 @@
       "industrie": "Industrie",
       "sante": "Santé",
       "energie": "Énergie"
+    },
+    "schedules": {
+      "dailyAt8": "Tous les jours à 8h",
+      "weekdaysAt8": "Jours ouvrés à 8h",
+      "mondayAt9": "Chaque lundi à 9h",
+      "firstOfMonth": "1er de chaque mois",
+      "custom": "Personnalisé"
     }
   },
   "onboarding": {
@@ -298,11 +387,167 @@
       "stagePlaceholder": "Sélectionnez un stade",
       "technologies": "Technologies utilisées",
       "isAIStartup": "Votre startup se considère-t-elle comme une startup IA ?",
-      "aiTypes": "Types d'IA utilisée"
+      "aiTypes": "Types d'IA utilisée",
+      "startupsAccompanied": "Nombre de startups accompagnées",
+      "stagesAccompanied": "Stades accompagnés",
+      "specializationSectors": "Secteurs de spécialisation"
     },
     "skip": "Passer cette étape",
     "finish": "Terminer",
-    "saving": "Enregistrement..."
+    "saving": "Enregistrement...",
+    "countries": {
+      "france": "France",
+      "belgium": "Belgique",
+      "switzerland": "Suisse",
+      "canada": "Canada",
+      "senegal": "Sénégal",
+      "ivoryCoast": "Côte d'Ivoire",
+      "germany": "Allemagne",
+      "spain": "Espagne",
+      "italy": "Italie",
+      "uk": "Royaume-Uni",
+      "usa": "États-Unis"
+    },
+    "orgTypes": {
+      "startup": "Startup",
+      "supportStructure": "Structure d'accompagnement",
+      "other": "Autre"
+    },
+    "sectors": {
+      "fintech": "Fintech",
+      "healthtech": "Healthtech",
+      "edtech": "Edtech",
+      "greentech": "Greentech",
+      "insurtech": "Insurtech",
+      "proptech": "Proptech",
+      "retailtech": "Retailtech",
+      "logistics": "Logistique",
+      "cybersecurity": "Cybersécurité",
+      "ecommerce": "E-commerce",
+      "saas": "SaaS",
+      "ai": "IA / Machine Learning",
+      "other": "Autre"
+    },
+    "stages": {
+      "preSeed": "Pré-seed",
+      "seed": "Seed",
+      "seriesA": "Série A",
+      "seriesB": "Série B",
+      "seriesC": "Série C ou plus"
+    },
+    "structureTypes": {
+      "incubator": "Incubateur",
+      "accelerator": "Accélérateur",
+      "vcWithProgram": "Fonds VC avec programme d'accélération",
+      "publicEntity": "Entité publique"
+    },
+    "specializations": {
+      "generalist": "Généraliste",
+      "deeptech": "Deeptech",
+      "impact": "Impact"
+    },
+    "accompanimentTypes": {
+      "mentoring": "Mentorat",
+      "funding": "Financement",
+      "goToMarket": "Go-to-market",
+      "productTech": "Produit / Tech",
+      "aiData": "IA / Data",
+      "legal": "Juridique / Réglementaire"
+    }
+  },
+  "profile": {
+    "title": "Profil",
+    "subtitle": "Gérer vos informations et votre mot de passe",
+    "fullNamePlaceholder": "Votre nom complet",
+    "emailCannotChange": "L'email ne peut pas être modifié",
+    "updateSuccess": "Profil mis à jour avec succès",
+    "contextTitle": "Contextes Entreprise",
+    "contextDescription": "Ajoutez plusieurs contextes pour personnaliser vos analyses. Les contextes actifs sont utilisés par l'IA.",
+    "newContext": "Nouveau contexte",
+    "contextNamePlaceholder": "Nom du contexte (ex: Présentation entreprise)",
+    "contextContentPlaceholder": "Décrivez votre entreprise, secteur, objectifs...",
+    "contextSaved": "Contexte enregistré avec succès",
+    "noContexts": "Aucun contexte enregistré",
+    "noContextsHelp": "Cliquez sur \"Ajouter\" pour créer votre premier contexte",
+    "passwordTitle": "Changer le mot de passe",
+    "currentPassword": "Mot de passe actuel",
+    "newPassword": "Nouveau mot de passe",
+    "confirmPassword": "Confirmer le nouveau mot de passe",
+    "passwordChanged": "Mot de passe modifié avec succès",
+    "errors": {
+      "minLength": "Le mot de passe doit contenir au moins 6 caractères",
+      "passwordChange": "Erreur lors du changement de mot de passe",
+      "loadContexts": "Erreur lors du chargement des contextes",
+      "updateContext": "Erreur lors de la mise à jour du contexte",
+      "unsupportedFormat": "Format non supporté. Utilisez PDF, DOCX ou TXT.",
+      "contentRequired": "Veuillez entrer du contenu"
+    }
+  },
+  "chat": {
+    "title": "Expert IA Spécialisé",
+    "description": "Assistance personnalisée en intelligence stratégique pour le secteur",
+    "sector": "Secteur:",
+    "placeholder": "Posez votre question...",
+    "enterToSend": "Entrée pour envoyer",
+    "greeting": "Bonjour ! Je suis **Prometheus**, votre assistant d'intelligence stratégique.\n\nJe peux vous aider avec :\n- 📊 **L'analyse de données** et tendances du marché\n- 🔍 **La recherche stratégique** sur des sujets spécifiques\n- 📋 **Les résumés de rapports** et recommandations\n- 💡 **Des conseils personnalisés** pour votre secteur\n\nComment puis-je vous aider aujourd'hui ?",
+    "mustBeLoggedIn": "Vous devez être connecté pour utiliser le chat",
+    "errorProcessing": "Je suis désolé, je n'ai pas pu traiter votre demande.",
+    "communicationError": "Erreur de communication avec l'assistant",
+    "connectionError": "Erreur de connexion. Veuillez réessayer."
+  },
+  "history": {
+    "title": "Historique des Conversations",
+    "subtitle": "Consultez et gérez vos {count} conversations précédentes",
+    "searchPlaceholder": "Rechercher dans les conversations...",
+    "filters": "Filtres",
+    "allTypes": "Tous les types",
+    "chat": "Chat",
+    "analysis": "Analyse",
+    "question": "Question :",
+    "response": "Réponse :",
+    "showMore": "Voir plus",
+    "showLess": "Voir moins",
+    "aFewMinutesAgo": "Il y a quelques minutes",
+    "hoursAgo": "Il y a {count}h",
+    "yesterday": "Hier",
+    "daysAgo": "Il y a {count} jours",
+    "noConversationsFiltered": "Aucune conversation trouvée avec ces filtres",
+    "noConversations": "Aucune conversation pour le moment",
+    "deleteConversation": "Supprimer la conversation",
+    "deleteConfirm": "Êtes-vous sûr de vouloir supprimer cette conversation ? Cette action est irréversible.",
+    "confirmDelete": "Supprimer",
+    "cancelDelete": "Annuler"
+  },
+  "library": {
+    "title": "Bibliothèque de Documents",
+    "subtitle": "{total} document(s) au total — {reports} rapport(s) — {watches} veille(s)",
+    "searchPlaceholder": "Rechercher dans les documents...",
+    "filters": "Filtres",
+    "all": "Tous",
+    "reports": "Rapports",
+    "watches": "Veilles",
+    "allTypes": "Tous les types",
+    "report": "Rapport",
+    "watch": "Veille",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "thisWeek": "Cette semaine",
+    "thisMonth": "Ce mois-ci",
+    "older": "Plus ancien",
+    "noDocumentsFiltered": "Aucun document trouvé avec ces filtres",
+    "noDocuments": "Aucun document pour le moment",
+    "deleteDocument": "Supprimer le document",
+    "deleteConfirm": "Êtes-vous sûr de vouloir supprimer ce document ? Cette action est irréversible.",
+    "confirmDelete": "Supprimer",
+    "cancelDelete": "Annuler",
+    "daysAgo": "Il y a {days} jours"
+  },
+  "document": {
+    "relevant": "pertinent",
+    "urlNotAvailable": "URL non disponible pour l'instant"
+  },
+  "metadata": {
+    "description": "Plateforme d'intelligence stratégique par IA. Rapports d'analyse, chat expert et export PDF.",
+    "keywords": "intelligence, stratégie, analyse, IA, consultation, rapports, business"
   }
 }
-

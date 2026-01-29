@@ -20,7 +20,13 @@
     "success": "Success",
     "failed": "Failed",
     "pending": "Pending",
-    "running": "Running"
+    "running": "Running",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "copied": "Copied!",
+    "allRightsReserved": "All rights reserved.",
+    "characters": "characters",
+    "storageUsed": "Storage used"
   },
   "nav": {
     "reports": "Reports",
@@ -31,7 +37,13 @@
     "profile": "My profile",
     "admin": "Administration",
     "user": "User",
-    "systemOperational": "System operational"
+    "systemOperational": "System operational",
+    "library": "Library",
+    "history": "History",
+    "pricing": "Pricing",
+    "login": "Login",
+    "backToDashboard": "Back to Dashboard",
+    "backToMainMenu": "Back to main menu"
   },
   "home": {
     "tagline": "Transform your data into decisions. AI-powered strategic intelligence.",
@@ -72,7 +84,36 @@
     "reportSuccess": "Report generated successfully!",
     "pdfSuccess": "PDF downloaded successfully!",
     "pdfGenerating": "Generating PDF...",
-    "pdfError": "Error during PDF export"
+    "pdfError": "Error during PDF export",
+    "cancelAnalysis": "Cancel analysis",
+    "analysisCancelled": "Analysis cancelled",
+    "cancelledByUser": "Analysis cancelled by user",
+    "realtimeActivity": "Real-time activity",
+    "elapsed": "elapsed",
+    "calculating": "Calculating...",
+    "fast": "fast",
+    "normal": "normal",
+    "slow": "slow",
+    "steps": {
+      "documentResearch": "Document research",
+      "contextAnalysis": "Context analysis",
+      "dataCrossReference": "Data cross-reference",
+      "sourceAnalysis": "Source analysis",
+      "finalization": "Finalization"
+    },
+    "logs": {
+      "initializing": "Initializing analysis...",
+      "connecting": "Connecting to backend...",
+      "connectionEstablished": "Connection established, streaming started",
+      "streamingNotSupported": "Streaming not supported",
+      "reportGenerated": "Report generated successfully!"
+    },
+    "errors": {
+      "enterQuery": "Please enter an analysis query",
+      "httpError": "HTTP Error",
+      "pdfExportError": "Error during PDF export",
+      "pdfDownloadError": "Error downloading PDF"
+    }
   },
   "login": {
     "welcome": "Welcome",
@@ -80,6 +121,7 @@
     "connectToAccess": "Sign in to access the platform",
     "joinPlatform": "Join the strategic intelligence platform",
     "fullName": "Full name",
+    "fullNamePlaceholder": "John Doe",
     "email": "Email address",
     "emailPlaceholder": "you@company.com",
     "password": "Password",
@@ -90,7 +132,41 @@
     "signIn": "Sign in",
     "createMyAccount": "Create my account",
     "haveInvitation": "Do you have an invitation code?",
-    "alreadyHaveAccount": "Already have an account?"
+    "alreadyHaveAccount": "Already have an account?",
+    "enterCredentials": "Enter your credentials to continue",
+    "fillForm": "Fill out the form to create your account",
+    "seePricing": "See pricing",
+    "connection": "Login"
+  },
+  "forgotPassword": {
+    "tagline": "Password recovery",
+    "title": "Forgot password",
+    "description": "Enter your email to request a reset",
+    "emailPlaceholder": "you@company.com",
+    "submit": "Send request",
+    "successTitle": "Request sent",
+    "successMessage": "If this email is associated with an account, an administrator will be able to provide you with a reset link.",
+    "contactAdmin": "Contact your administrator to get the link.",
+    "backToLogin": "Back to login"
+  },
+  "resetPassword": {
+    "title": "Reset password",
+    "description": "Choose a new secure password",
+    "account": "Account:",
+    "invalidLink": "Invalid link",
+    "invalidLinkMessage": "This reset link is invalid or has expired.",
+    "requestNewLink": "Request a new link",
+    "passwordChanged": "Password changed",
+    "redirecting": "Redirecting to login page...",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "submit": "Reset password",
+    "backToLogin": "Back to login",
+    "errors": {
+      "invalidLink": "This link is invalid or has expired",
+      "minLength": "Password must contain at least 6 characters",
+      "mismatch": "Passwords do not match"
+    }
   },
   "admin": {
     "title": "Administration",
@@ -136,6 +212,10 @@
     "noData": "No data available",
     "startDate": "Start date",
     "endDate": "End date",
+    "activities": "activities",
+    "unknownUser": "Unknown user",
+    "searches": "Searches",
+    "creationError": "Error during creation",
     "actions": {
       "loggedIn": "logged in",
       "createdReport": "created a report",
@@ -236,8 +316,10 @@
     "history": "History",
     "noHistory": "No execution recorded",
     "triggerSuccess": "Watch triggered successfully!",
+    "triggerError": "Error triggering watch",
     "deleteConfirm": "Are you sure you want to delete this watch?",
     "loadError": "Unable to load watches",
+    "executeNow": "Execute now",
     "days": {
       "sunday": "Sunday",
       "monday": "Monday",
@@ -269,6 +351,13 @@
       "industrie": "Industry",
       "sante": "Healthcare",
       "energie": "Energy"
+    },
+    "schedules": {
+      "dailyAt8": "Every day at 8am",
+      "weekdaysAt8": "Weekdays at 8am",
+      "mondayAt9": "Every Monday at 9am",
+      "firstOfMonth": "1st of each month",
+      "custom": "Custom"
     }
   },
   "onboarding": {
@@ -298,11 +387,167 @@
       "stagePlaceholder": "Select a stage",
       "technologies": "Technologies used",
       "isAIStartup": "Does your startup consider itself an AI startup?",
-      "aiTypes": "Types of AI used"
+      "aiTypes": "Types of AI used",
+      "startupsAccompanied": "Number of startups accompanied",
+      "stagesAccompanied": "Stages accompanied",
+      "specializationSectors": "Specialization sectors"
     },
     "skip": "Skip this step",
     "finish": "Finish",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "countries": {
+      "france": "France",
+      "belgium": "Belgium",
+      "switzerland": "Switzerland",
+      "canada": "Canada",
+      "senegal": "Senegal",
+      "ivoryCoast": "Ivory Coast",
+      "germany": "Germany",
+      "spain": "Spain",
+      "italy": "Italy",
+      "uk": "United Kingdom",
+      "usa": "United States"
+    },
+    "orgTypes": {
+      "startup": "Startup",
+      "supportStructure": "Support structure",
+      "other": "Other"
+    },
+    "sectors": {
+      "fintech": "Fintech",
+      "healthtech": "Healthtech",
+      "edtech": "Edtech",
+      "greentech": "Greentech",
+      "insurtech": "Insurtech",
+      "proptech": "Proptech",
+      "retailtech": "Retailtech",
+      "logistics": "Logistics",
+      "cybersecurity": "Cybersecurity",
+      "ecommerce": "E-commerce",
+      "saas": "SaaS",
+      "ai": "AI / Machine Learning",
+      "other": "Other"
+    },
+    "stages": {
+      "preSeed": "Pre-seed",
+      "seed": "Seed",
+      "seriesA": "Series A",
+      "seriesB": "Series B",
+      "seriesC": "Series C or later"
+    },
+    "structureTypes": {
+      "incubator": "Incubator",
+      "accelerator": "Accelerator",
+      "vcWithProgram": "VC fund with acceleration program",
+      "publicEntity": "Public entity"
+    },
+    "specializations": {
+      "generalist": "Generalist",
+      "deeptech": "Deeptech",
+      "impact": "Impact"
+    },
+    "accompanimentTypes": {
+      "mentoring": "Mentoring",
+      "funding": "Funding",
+      "goToMarket": "Go-to-market",
+      "productTech": "Product / Tech",
+      "aiData": "AI / Data",
+      "legal": "Legal / Regulatory"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "subtitle": "Manage your information and password",
+    "fullNamePlaceholder": "Your full name",
+    "emailCannotChange": "Email cannot be changed",
+    "updateSuccess": "Profile updated successfully",
+    "contextTitle": "Company Contexts",
+    "contextDescription": "Add multiple contexts to personalize your analyses. Active contexts are used by AI.",
+    "newContext": "New context",
+    "contextNamePlaceholder": "Context name (e.g.: Company overview)",
+    "contextContentPlaceholder": "Describe your company, sector, goals...",
+    "contextSaved": "Context saved successfully",
+    "noContexts": "No contexts saved",
+    "noContextsHelp": "Click \"Add\" to create your first context",
+    "passwordTitle": "Change Password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordChanged": "Password changed successfully",
+    "errors": {
+      "minLength": "Password must contain at least 6 characters",
+      "passwordChange": "Error changing password",
+      "loadContexts": "Error loading contexts",
+      "updateContext": "Error updating context",
+      "unsupportedFormat": "Unsupported format. Use PDF, DOCX or TXT.",
+      "contentRequired": "Please enter content"
+    }
+  },
+  "chat": {
+    "title": "Specialized AI Expert",
+    "description": "Personalized assistance in strategic intelligence for the sector",
+    "sector": "Sector:",
+    "placeholder": "Ask your question...",
+    "enterToSend": "Enter to send",
+    "greeting": "Hello! I am **Prometheus**, your strategic intelligence assistant.\n\nI can help you with:\n- 📊 **Data analysis** and market trends\n- 🔍 **Strategic research** on specific topics\n- 📋 **Report summaries** and recommendations\n- 💡 **Personalized advice** for your sector\n\nHow can I help you today?",
+    "mustBeLoggedIn": "You must be logged in to use chat",
+    "errorProcessing": "Sorry, I could not process your request.",
+    "communicationError": "Communication error with the assistant",
+    "connectionError": "Connection error. Please try again."
+  },
+  "history": {
+    "title": "Conversation History",
+    "subtitle": "Browse and manage your {count} previous conversations",
+    "searchPlaceholder": "Search conversations...",
+    "filters": "Filters",
+    "allTypes": "All types",
+    "chat": "Chat",
+    "analysis": "Analysis",
+    "question": "Question:",
+    "response": "Response:",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "aFewMinutesAgo": "A few minutes ago",
+    "hoursAgo": "{count}h ago",
+    "yesterday": "Yesterday",
+    "daysAgo": "{count} days ago",
+    "noConversationsFiltered": "No conversations found with these filters",
+    "noConversations": "No conversations yet",
+    "deleteConversation": "Delete conversation",
+    "deleteConfirm": "Are you sure you want to delete this conversation? This action is irreversible.",
+    "confirmDelete": "Delete",
+    "cancelDelete": "Cancel"
+  },
+  "library": {
+    "title": "Document Library",
+    "subtitle": "{total} document(s) total — {reports} report(s) — {watches} watch(es)",
+    "searchPlaceholder": "Search documents...",
+    "filters": "Filters",
+    "all": "All",
+    "reports": "Reports",
+    "watches": "Watches",
+    "allTypes": "All types",
+    "report": "Report",
+    "watch": "Watch",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This week",
+    "thisMonth": "This month",
+    "older": "Older",
+    "noDocumentsFiltered": "No documents found with these filters",
+    "noDocuments": "No documents yet",
+    "deleteDocument": "Delete document",
+    "deleteConfirm": "Are you sure you want to delete this document? This action is irreversible.",
+    "confirmDelete": "Delete",
+    "cancelDelete": "Cancel",
+    "daysAgo": "{days} days ago"
+  },
+  "document": {
+    "relevant": "relevant",
+    "urlNotAvailable": "URL not available at this time"
+  },
+  "metadata": {
+    "description": "AI-powered strategic intelligence platform. Analysis reports, expert chat and PDF export.",
+    "keywords": "intelligence, strategy, analysis, AI, consulting, reports, business"
   }
 }
-

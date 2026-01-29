@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Eye, EyeOff, LogIn, Loader2, CreditCard, User, Ticket } from 'lucide-react'
 import Link from 'next/link'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -35,6 +36,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
 
   const { signIn, signUp } = useSupabaseAuth()
+  const { t } = useTranslation()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +50,7 @@ export default function LoginPage() {
         await signUp(email, password, fullName, invitationCode)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue')
+      setError(err instanceof Error ? err.message : t('common.error'))
     } finally {
       setIsLoading(false)
     }
@@ -70,8 +72,8 @@ export default function LoginPage() {
           </div>
           <p className="text-muted-foreground mt-4">
             {mode === 'login'
-              ? 'Connectez-vous pour accéder à la plateforme'
-              : 'Rejoignez la plateforme d\'intelligence stratégique'
+              ? t('login.connectToAccess')
+              : t('login.joinPlatform')
             }
           </p>
         </div>
@@ -80,12 +82,12 @@ export default function LoginPage() {
         <Card className="border-border/50 shadow-xl">
           <CardHeader className="text-center">
             <CardTitle className="text-xl">
-              {mode === 'login' ? 'Connexion' : 'Créer un compte'}
+              {mode === 'login' ? t('login.connection') : t('login.createAccount')}
             </CardTitle>
             <CardDescription>
               {mode === 'login'
-                ? 'Entrez vos identifiants pour continuer'
-                : 'Remplissez le formulaire pour créer votre compte'
+                ? t('login.enterCredentials')
+                : t('login.fillForm')
               }
             </CardDescription>
           </CardHeader>
@@ -101,13 +103,13 @@ export default function LoginPage() {
               {/* Full Name (Register only) */}
               {mode === 'register' && (
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Nom complet</Label>
+                  <Label htmlFor="fullName">{t('login.fullName')}</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="fullName"
                       type="text"
-                      placeholder="Jean Dupont"
+                      placeholder={t('login.fullNamePlaceholder')}
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       className="pl-10"
@@ -119,7 +121,7 @@ export default function LoginPage() {
 
               {/* Email */}
               <div className="space-y-2">
-                <Label htmlFor="email">Adresse email</Label>
+                <Label htmlFor="email">{t('login.email')}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -134,13 +136,13 @@ export default function LoginPage() {
               {/* Password */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Mot de passe</Label>
+                  <Label htmlFor="password">{t('login.password')}</Label>
                   {mode === 'login' && (
                     <Link
                       href="/forgot-password"
                       className="text-sm text-primary hover:underline"
                     >
-                      Mot de passe oublié ?
+                      {t('login.forgotPassword')}
                     </Link>
                   )}
                 </div>
@@ -175,13 +177,13 @@ export default function LoginPage() {
               {/* Invitation Code (Register only) */}
               {mode === 'register' && (
                 <div className="space-y-2">
-                  <Label htmlFor="invitationCode">Code d&apos;invitation</Label>
+                  <Label htmlFor="invitationCode">{t('login.invitationCode')}</Label>
                   <div className="relative">
                     <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="invitationCode"
                       type="text"
-                      placeholder="Entrez votre code d'invitation"
+                      placeholder={t('login.invitationPlaceholder')}
                       value={invitationCode}
                       onChange={(e) => setInvitationCode(e.target.value)}
                       className="pl-10"
@@ -189,7 +191,7 @@ export default function LoginPage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Vous devez avoir reçu un code d&apos;invitation d&apos;un administrateur
+                    {t('login.invitationRequired')}
                   </p>
                 </div>
               )}
@@ -201,7 +203,7 @@ export default function LoginPage() {
                 ) : (
                   <LogIn className="h-4 w-4" />
                 )}
-                {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
+                {mode === 'login' ? t('login.signIn') : t('login.createMyAccount')}
               </Button>
             </form>
 
@@ -209,24 +211,24 @@ export default function LoginPage() {
             <div className="mt-6 text-center text-sm text-muted-foreground">
               {mode === 'login' ? (
                 <>
-                  Vous avez un code d&apos;invitation ?{' '}
+                  {t('login.haveInvitation')}{' '}
                   <Button
                     variant="link"
                     onClick={toggleMode}
                     className="px-0 text-primary"
                   >
-                    Créer un compte
+                    {t('login.createAccount')}
                   </Button>
                 </>
               ) : (
                 <>
-                  Vous avez déjà un compte ?{' '}
+                  {t('login.alreadyHaveAccount')}{' '}
                   <Button
                     variant="link"
                     onClick={toggleMode}
                     className="px-0 text-primary"
                   >
-                    Se connecter
+                    {t('login.signIn')}
                   </Button>
                 </>
               )}
@@ -242,13 +244,13 @@ export default function LoginPage() {
             className="gap-2"
           >
             <CreditCard className="w-4 h-4" />
-            Voir les tarifs
+            {t('login.seePricing')}
           </Button>
         </div>
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © {new Date().getFullYear()} Axial Intelligence. Tous droits réservés.
+          © {new Date().getFullYear()} Axial Intelligence. {t('common.allRightsReserved')}
         </p>
       </div>
     </div>

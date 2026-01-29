@@ -33,8 +33,8 @@ export default function Navbar() {
   // Navigation items
   const navItems = [
     { label: t('nav.newReport'), icon: FileText, path: '/' },
-    { label: 'Bibliothèque', icon: Library, path: '/library' },
-    { label: 'Historique', icon: MessageSquare, path: '/history' },
+    { label: t('nav.library'), icon: Library, path: '/library' },
+    { label: t('nav.history'), icon: MessageSquare, path: '/history' },
     { label: t('nav.watches'), icon: Bell, path: '/watches' },
     ...(isAdmin ? [{ label: t('nav.admin'), icon: Users, path: '/admin' }] : []),
   ]

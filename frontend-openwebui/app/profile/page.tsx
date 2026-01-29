@@ -50,6 +50,7 @@ interface StorageQuota {
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import MainLayout from '../components/layout/MainLayout'
 import { Button } from '../components/ui/button'
 
@@ -58,6 +59,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 export default function ProfilePage() {
   const { user, token, isLoading: authLoading, refreshUser } = useSupabaseAuth()
   const router = useRouter()
+  const { t } = useTranslation()
 
   // Profile form
   const [fullName, setFullName] = useState('')
@@ -122,10 +124,10 @@ export default function ProfilePage() {
         setTimeout(() => setProfileSuccess(false), 3000)
       } else {
         const data = await response.json()
-        setProfileError(data.detail || 'Erreur lors de la sauvegarde')
+        setProfileError(data.detail || t('common.error'))
       }
     } catch (err) {
-      setProfileError('Erreur de connexion au serveur')
+      setProfileError(t('chat.connectionError') || 'Connection error')
     } finally {
       setIsSavingProfile(false)
     }
@@ -137,12 +139,12 @@ export default function ProfilePage() {
     setPasswordSuccess(false)
 
     if (newPassword !== confirmPassword) {
-      setPasswordError('Les mots de passe ne correspondent pas')
+      setPasswordError(t('resetPassword.errors.mismatch'))
       return
     }
 
     if (newPassword.length < 6) {
-      setPasswordError('Le mot de passe doit contenir au moins 6 caractères')
+      setPasswordError(t('resetPassword.errors.minLength'))
       return
     }
 
@@ -169,10 +171,10 @@ export default function ProfilePage() {
         setTimeout(() => setPasswordSuccess(false), 3000)
       } else {
         const data = await response.json()
-        setPasswordError(data.detail || 'Erreur lors du changement de mot de passe')
+        setPasswordError(data.detail || t('profile.errors.passwordChange'))
       }
     } catch (err) {
-      setPasswordError('Erreur de connexion au serveur')
+      setPasswordError(t('chat.connectionError') || 'Connection error')
     } finally {
       setIsSavingPassword(false)
     }
@@ -206,7 +208,7 @@ export default function ProfilePage() {
         }
       } catch (err) {
         console.error('Error fetching contexts:', err)
-        setContextError('Erreur lors du chargement des contextes')
+        setContextError(t('profile.errors.loadContexts'))
       } finally {
         setIsLoadingContexts(false)
       }
@@ -229,11 +231,11 @@ export default function ProfilePage() {
 
     try {
       let content = ''
-      let name = contextName || 'Nouveau contexte'
+      let name = contextName || t('profile.newContext')
 
       if (contextType === 'text') {
         content = contextText
-        if (!content) throw new Error('Veuillez entrer du contenu')
+        if (!content) throw new Error(t('profile.errors.contentRequired'))
       } else if (contextDocument) {
         // Upload document directly to memory-service via gateway
         const formData = new FormData()
@@ -253,7 +255,7 @@ export default function ProfilePage() {
 
         if (!uploadRes.ok) {
           const errorData = await uploadRes.json().catch(() => ({}))
-          throw new Error(errorData.detail || 'Erreur lors de l\'upload')
+          throw new Error(errorData.detail || t('common.error'))
         }
 
         // Get the created context from response
@@ -274,7 +276,7 @@ export default function ProfilePage() {
         setTimeout(() => setContextSuccess(false), 3000)
         return
       } else {
-        throw new Error('Veuillez selectionner un fichier')
+        throw new Error(t('profile.errors.selectFile') || 'Please select a file')
       }
 
       // Create text context via new API
@@ -294,7 +296,7 @@ export default function ProfilePage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.detail || 'Erreur lors de la sauvegarde')
+        throw new Error(errorData.detail || t('common.error'))
       }
 
       const newContext = await response.json()
@@ -313,7 +315,7 @@ export default function ProfilePage() {
       resetContextForm()
       setTimeout(() => setContextSuccess(false), 3000)
     } catch (err: any) {
-      setContextError(err.message || 'Erreur lors de la sauvegarde du contexte')
+      setContextError(err.message || t('common.error'))
     } finally {
       setIsSavingContext(false)
     }
@@ -344,10 +346,10 @@ export default function ProfilePage() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}))
-        setContextError(errorData.detail || 'Erreur lors de la suppression du contexte')
+        setContextError(errorData.detail || t('profile.errors.deleteContext') || 'Error deleting context')
       }
     } catch (err) {
-      setContextError('Erreur lors de la suppression')
+      setContextError(t('profile.errors.deleteContext') || 'Error deleting context')
     }
   }
 
@@ -366,10 +368,10 @@ export default function ProfilePage() {
         setContexts(prev => prev.map(c => c.id === contextId ? updatedContext : c))
       } else {
         const errorData = await response.json().catch(() => ({}))
-        setContextError(errorData.detail || 'Erreur lors de la mise à jour du contexte')
+        setContextError(errorData.detail || t('profile.errors.updateContext'))
       }
     } catch (err) {
-      setContextError('Erreur lors de la mise à jour')
+      setContextError(t('profile.errors.updateContext'))
     }
   }
 
@@ -378,11 +380,11 @@ export default function ProfilePage() {
     if (file) {
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
       if (!validTypes.includes(file.type)) {
-        setContextError('Format non supporté. Utilisez PDF, DOCX ou TXT.')
+        setContextError(t('profile.errors.unsupportedFormat'))
         return
       }
       if (file.size > 10 * 1024 * 1024) {
-        setContextError('Fichier trop volumineux (max 10 Mo)')
+        setContextError(t('profile.errors.fileTooLarge') || 'File too large (max 10 MB)')
         return
       }
       setContextDocument(file)
@@ -422,9 +424,9 @@ export default function ProfilePage() {
               <div className="flex-1">
                 <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                   <User className="w-6 h-6 text-[var(--axial-accent)]" />
-                  Mon Profil
+                  {t('profile.title')}
                 </h1>
-                <p className="text-muted-foreground text-sm">Gérer vos informations et votre mot de passe</p>
+                <p className="text-muted-foreground text-sm">{t('profile.subtitle')}</p>
               </div>
             </div>
           </motion.div>
@@ -451,11 +453,11 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Shield className="w-3 h-3" />
-                    {user.role === 'admin' ? 'Administrateur' : 'Utilisateur'}
+                    {user.role === 'admin' ? t('nav.admin') : t('nav.user')}
                   </span>
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
-                    Membre depuis {formatDate(user.created_at)}
+                    {t('admin.registeredOn')} {formatDate(user.created_at)}
                   </span>
                 </div>
               </div>
@@ -471,7 +473,7 @@ export default function ProfilePage() {
           >
             <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
               <User className="w-5 h-5 text-[var(--axial-accent)]" />
-              Informations du profil
+              {t('profile.title')}
             </h3>
 
             <form onSubmit={handleSaveProfile} className="space-y-4">
@@ -485,13 +487,13 @@ export default function ProfilePage() {
               {profileSuccess && (
                 <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm">
                   <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                  Profil mis à jour avec succès
+                  {t('profile.updateSuccess')}
                 </div>
               )}
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Nom complet
+                  {t('login.fullName')}
                 </label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -500,14 +502,14 @@ export default function ProfilePage() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="glass-input w-full pl-12 pr-4"
-                    placeholder="Votre nom complet"
+                    placeholder={t('profile.fullNamePlaceholder')}
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Email
+                  {t('login.email')}
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -518,7 +520,7 @@ export default function ProfilePage() {
                     className="glass-input w-full pl-12 pr-4 opacity-50 cursor-not-allowed"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">L&apos;email ne peut pas être modifié</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('profile.emailCannotChange')}</p>
               </div>
 
               <Button
@@ -530,7 +532,7 @@ export default function ProfilePage() {
                 ) : (
                   <Save className="w-5 h-5" />
                 )}
-                Enregistrer
+                {t('common.save')}
               </Button>
             </form>
           </motion.div>
@@ -545,7 +547,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Building className="w-5 h-5 text-[var(--axial-accent)]" />
-                Contextes entreprise
+                {t('profile.contextTitle')}
               </h3>
               <Button
                 variant="default"
@@ -554,12 +556,12 @@ export default function ProfilePage() {
                 className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Ajouter
+                {t('common.create')}
               </Button>
             </div>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Ajoutez plusieurs contextes pour personnaliser vos analyses. Les contextes actifs sont utilisés par l&apos;IA.
+              {t('profile.contextDescription')}
             </p>
 
             {/* Storage quota bar */}
@@ -568,7 +570,7 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-2">
                     <HardDrive className="w-4 h-4" />
-                    Stockage utilisé
+                    {t('common.storageUsed')}
                   </span>
                   <span className="text-sm text-foreground">
                     {formatBytes(storageQuota.total_used_bytes)} / {formatBytes(storageQuota.max_bytes)}
@@ -596,14 +598,14 @@ export default function ProfilePage() {
             {contextSuccess && (
               <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm mb-4">
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                Contexte enregistré avec succès
+                {t('profile.contextSaved')}
               </div>
             )}
 
             {/* Add new context form */}
             {showAddContext && (
               <div className="mb-4 p-4 bg-muted/50 rounded-xl border border-border">
-                <h4 className="text-sm font-medium text-foreground mb-3">Nouveau contexte</h4>
+                <h4 className="text-sm font-medium text-foreground mb-3">{t('profile.newContext')}</h4>
 
                 {/* Context name */}
                 <div className="mb-3">
@@ -612,7 +614,7 @@ export default function ProfilePage() {
                     value={contextName}
                     onChange={(e) => setContextName(e.target.value)}
                     className="glass-input w-full px-4"
-                    placeholder="Nom du contexte (ex: Présentation entreprise)"
+                    placeholder={t('profile.contextNamePlaceholder')}
                   />
                 </div>
 
@@ -626,7 +628,7 @@ export default function ProfilePage() {
                     className="flex-1 flex items-center justify-center gap-2"
                   >
                     <Type className="w-4 h-4" />
-                    Texte
+                    {t('profile.text') || 'Text'}
                   </Button>
                   <Button
                     type="button"
@@ -636,7 +638,7 @@ export default function ProfilePage() {
                     className="flex-1 flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
-                    Document
+                    {t('profile.document') || 'Document'}
                   </Button>
                 </div>
 
@@ -647,11 +649,11 @@ export default function ProfilePage() {
                       value={contextText}
                       onChange={(e) => setContextText(e.target.value)}
                       className="glass-input w-full h-32 resize-none px-4"
-                      placeholder="Décrivez votre entreprise, secteur, objectifs..."
+                      placeholder={t('profile.contextContentPlaceholder')}
                       maxLength={50000}
                     />
                     <p className="text-xs text-muted-foreground text-right">
-                      {contextText.length} / 50 000 caractères
+                      {contextText.length} / 50 000 {t('common.characters')}
                     </p>
                   </div>
                 )}
@@ -663,7 +665,7 @@ export default function ProfilePage() {
                       <div className="flex flex-col items-center justify-center py-4">
                         <Upload className="w-6 h-6 text-muted-foreground mb-1" />
                         <p className="text-sm text-muted-foreground">
-                          {contextDocument ? contextDocument.name : 'Cliquez pour upload'}
+                          {contextDocument ? contextDocument.name : t('profile.clickToUpload') || 'Click to upload'}
                         </p>
                         <p className="text-xs text-muted-foreground">PDF, DOCX, TXT (max 10 Mo)</p>
                       </div>
@@ -683,7 +685,7 @@ export default function ProfilePage() {
                     size="sm"
                     onClick={() => { setShowAddContext(false); resetContextForm(); }}
                   >
-                    Annuler
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     variant="default"
@@ -696,7 +698,7 @@ export default function ProfilePage() {
                     ) : (
                       <Save className="w-4 h-4" />
                     )}
-                    Enregistrer
+                    {t('common.save')}
                   </Button>
                 </div>
               </div>
@@ -710,8 +712,8 @@ export default function ProfilePage() {
             ) : contexts.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Building className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>Aucun contexte enregistré</p>
-                <p className="text-sm text-muted-foreground">Cliquez sur &quot;Ajouter&quot; pour créer votre premier contexte</p>
+                <p>{t('profile.noContexts')}</p>
+                <p className="text-sm text-muted-foreground">{t('profile.noContextsHelp')}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -747,7 +749,7 @@ export default function ProfilePage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleToggleContextActive(ctx.id, ctx.is_active)}
-                        title={ctx.is_active ? 'Désactiver' : 'Activer'}
+                        title={ctx.is_active ? t('common.deactivate') : t('common.activate')}
                         className="text-muted-foreground hover:text-foreground"
                       >
                         {ctx.is_active ? (
@@ -760,7 +762,7 @@ export default function ProfilePage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDeleteContext(ctx.id)}
-                        title="Supprimer"
+                        title={t('common.delete')}
                         className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -781,7 +783,7 @@ export default function ProfilePage() {
           >
             <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
               <Lock className="w-5 h-5 text-[var(--axial-accent)]" />
-              Changer le mot de passe
+              {t('profile.passwordTitle')}
             </h3>
 
             <form onSubmit={handleChangePassword} className="space-y-4">
@@ -795,13 +797,13 @@ export default function ProfilePage() {
               {passwordSuccess && (
                 <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 text-sm">
                   <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                  Mot de passe modifié avec succès
+                  {t('profile.passwordChanged')}
                 </div>
               )}
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Mot de passe actuel
+                  {t('profile.currentPassword')}
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -827,7 +829,7 @@ export default function ProfilePage() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Nouveau mot de passe
+                  {t('profile.newPassword')}
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -845,7 +847,7 @@ export default function ProfilePage() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Confirmer le nouveau mot de passe
+                  {t('profile.confirmPassword')}
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -870,7 +872,7 @@ export default function ProfilePage() {
                 ) : (
                   <Lock className="w-5 h-5" />
                 )}
-                Changer le mot de passe
+                {t('profile.passwordTitle')}
               </Button>
             </form>
           </motion.div>

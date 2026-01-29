@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import MainLayout from '../components/layout/MainLayout'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Card, CardContent } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -48,6 +49,7 @@ interface DocumentListResponse {
 
 export default function DocumentLibraryPage() {
   const { token } = useSupabaseAuth()
+  const { t } = useTranslation()
   const [documents, setDocuments] = useState<Document[]>([])
   const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,18 +60,18 @@ export default function DocumentLibraryPage() {
   const [documentToDelete, setDocumentToDelete] = useState<number | null>(null)
 
   const documentTypes = [
-    { id: 'all', label: 'Tous', icon: null },
-    { id: 'report', label: 'Rapports', icon: FileText },
-    { id: 'watch', label: 'Veilles', icon: Bell }
+    { id: 'all', label: t('library.all'), icon: null },
+    { id: 'report', label: t('library.reports'), icon: FileText },
+    { id: 'watch', label: t('library.watches'), icon: Bell }
   ]
 
   const analysisTypes = [
-    { id: 'all', label: 'Tous les types' },
-    { id: 'synthese_executive', label: 'Synthese Executive' },
-    { id: 'analyse_concurrentielle', label: 'Analyse Concurrentielle' },
-    { id: 'veille_technologique', label: 'Veille Technologique' },
-    { id: 'analyse_risques', label: 'Analyse des Risques' },
-    { id: 'analyse_reglementaire', label: 'Analyse Reglementaire' }
+    { id: 'all', label: t('library.allTypes') },
+    { id: 'synthese_executive', label: t('analysis.types.synthese_executive') },
+    { id: 'analyse_concurrentielle', label: t('analysis.types.analyse_concurrentielle') },
+    { id: 'veille_technologique', label: t('analysis.types.veille_technologique') },
+    { id: 'analyse_risques', label: t('analysis.types.analyse_risques') },
+    { id: 'analyse_reglementaire', label: t('analysis.types.analyse_reglementaire') }
   ]
 
   useEffect(() => {
@@ -179,9 +181,9 @@ export default function DocumentLibraryPage() {
     const diff = now.getTime() - date.getTime()
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
 
-    if (days === 0) return "Aujourd'hui"
-    if (days === 1) return 'Hier'
-    if (days < 7) return `Il y a ${days} jours`
+    if (days === 0) return t('library.today')
+    if (days === 1) return t('library.yesterday')
+    if (days < 7) return t('library.daysAgo').replace('{days}', String(days))
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
@@ -278,7 +280,7 @@ export default function DocumentLibraryPage() {
                 {/* Metadata */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   <Badge variant={doc.document_type === 'report' ? 'default' : 'secondary'}>
-                    {doc.document_type === 'report' ? 'Rapport' : 'Veille'}
+                    {doc.document_type === 'report' ? t('library.report') : t('library.watch')}
                   </Badge>
                   {doc.analysis_type && (
                     <Badge variant="outline">
@@ -325,12 +327,13 @@ export default function DocumentLibraryPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Bibliotheque de Documents
+              {t('library.title')}
             </h1>
             <p className="text-muted-foreground">
-              {documents.length} document{documents.length > 1 ? 's' : ''} au total
-              {' '}{filteredDocuments.filter(d => d.document_type === 'report').length} rapport{filteredDocuments.filter(d => d.document_type === 'report').length > 1 ? 's' : ''}
-              {' '}{filteredDocuments.filter(d => d.document_type === 'watch').length} veille{filteredDocuments.filter(d => d.document_type === 'watch').length > 1 ? 's' : ''}
+              {t('library.subtitle')
+                .replace('{total}', String(documents.length))
+                .replace('{reports}', String(filteredDocuments.filter(d => d.document_type === 'report').length))
+                .replace('{watches}', String(filteredDocuments.filter(d => d.document_type === 'watch').length))}
             </p>
           </div>
         </div>
@@ -345,7 +348,7 @@ export default function DocumentLibraryPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher dans les documents..."
+            placeholder={t('library.searchPlaceholder')}
             className="pl-12"
           />
         </div>
@@ -359,7 +362,7 @@ export default function DocumentLibraryPage() {
             className="gap-2"
           >
             <Filter className="w-4 h-4" />
-            Filtres
+            {t('library.filters')}
             <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} />
           </Button>
 
@@ -411,29 +414,29 @@ export default function DocumentLibraryPage() {
           <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground text-lg">
             {searchQuery || selectedType !== 'all' || selectedAnalysisType !== 'all'
-              ? 'Aucun document trouve avec ces filtres'
-              : 'Aucun document pour le moment'}
+              ? t('library.noDocumentsFiltered')
+              : t('library.noDocuments')}
           </p>
         </div>
       ) : (
         <div>
-          {renderDocumentGroup("Aujourd'hui", groupedDocs.today)}
-          {renderDocumentGroup('Hier', groupedDocs.yesterday)}
-          {renderDocumentGroup('Cette semaine', groupedDocs.lastWeek)}
-          {renderDocumentGroup('Ce mois-ci', groupedDocs.lastMonth)}
-          {renderDocumentGroup('Plus ancien', groupedDocs.older)}
+          {renderDocumentGroup(t('library.today'), groupedDocs.today)}
+          {renderDocumentGroup(t('library.yesterday'), groupedDocs.yesterday)}
+          {renderDocumentGroup(t('library.thisWeek'), groupedDocs.lastWeek)}
+          {renderDocumentGroup(t('library.thisMonth'), groupedDocs.lastMonth)}
+          {renderDocumentGroup(t('library.older'), groupedDocs.older)}
         </div>
       )}
 
       {/* Delete Confirmation Dialog */}
       {documentToDelete && (
         <ConfirmDialog
-          title="Supprimer le document"
-          message="Etes-vous sur de vouloir supprimer ce document ? Cette action est irreversible."
+          title={t('library.deleteDocument')}
+          message={t('library.deleteConfirm')}
           onConfirm={() => handleDelete(documentToDelete)}
           onCancel={() => setDocumentToDelete(null)}
-          confirmText="Supprimer"
-          cancelText="Annuler"
+          confirmText={t('library.confirmDelete')}
+          cancelText={t('library.cancelDelete')}
         />
       )}
     </MainLayout>

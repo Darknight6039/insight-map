@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import MainLayout from '../components/layout/MainLayout'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Card, CardContent } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -41,6 +42,7 @@ interface ConversationListResponse {
 
 export default function ConversationHistoryPage() {
   const { token } = useSupabaseAuth()
+  const { t } = useTranslation()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,9 +53,9 @@ export default function ConversationHistoryPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const conversationTypes = [
-    { id: 'all', label: 'Tous les types' },
-    { id: 'chat', label: 'Chat' },
-    { id: 'analysis', label: 'Analyse' }
+    { id: 'all', label: t('history.allTypes') },
+    { id: 'chat', label: t('history.chat') },
+    { id: 'analysis', label: t('history.analysis') }
   ]
 
   useEffect(() => {
@@ -133,10 +135,10 @@ export default function ConversationHistoryPage() {
     const hours = Math.floor(diff / (1000 * 60 * 60))
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
 
-    if (hours < 1) return 'Il y a quelques minutes'
-    if (hours < 24) return `Il y a ${hours}h`
-    if (days === 1) return 'Hier'
-    if (days < 7) return `Il y a ${days} jours`
+    if (hours < 1) return t('history.aFewMinutesAgo')
+    if (hours < 24) return t('history.hoursAgo').replace('{count}', String(hours))
+    if (days === 1) return t('history.yesterday')
+    if (days < 7) return t('history.daysAgo').replace('{count}', String(days))
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
@@ -155,10 +157,10 @@ export default function ConversationHistoryPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Historique des Conversations
+              {t('history.title')}
             </h1>
             <p className="text-muted-foreground">
-              Consultez et gerez vos {conversations.length} conversations precedentes
+              {t('history.subtitle').replace('{count}', String(conversations.length))}
             </p>
           </div>
         </div>
@@ -173,7 +175,7 @@ export default function ConversationHistoryPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher dans les conversations..."
+            placeholder={t('history.searchPlaceholder')}
             className="pl-12"
           />
         </div>
@@ -187,7 +189,7 @@ export default function ConversationHistoryPage() {
             className="gap-2"
           >
             <Filter className="w-4 h-4" />
-            Filtres
+            {t('history.filters')}
             <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} />
           </Button>
 
@@ -214,8 +216,8 @@ export default function ConversationHistoryPage() {
           <MessageSquare className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground text-lg">
             {searchQuery || selectedType !== 'all'
-              ? 'Aucune conversation trouvee avec ces filtres'
-              : 'Aucune conversation pour le moment'}
+              ? t('history.noConversationsFiltered')
+              : t('history.noConversations')}
           </p>
         </div>
       ) : (
@@ -247,7 +249,7 @@ export default function ConversationHistoryPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant={conversation.conversation_type === 'analysis' ? 'default' : 'secondary'}>
-                              {conversation.conversation_type === 'analysis' ? 'Analyse' : 'Chat'}
+                              {conversation.conversation_type === 'analysis' ? t('history.analysis') : t('history.chat')}
                             </Badge>
                             {conversation.analysis_type && (
                               <Badge variant="outline">
@@ -273,7 +275,7 @@ export default function ConversationHistoryPage() {
 
                     {/* Query */}
                     <div className="mb-3">
-                      <div className="text-sm text-muted-foreground mb-1 font-medium">Question:</div>
+                      <div className="text-sm text-muted-foreground mb-1 font-medium">{t('history.question')}</div>
                       <div className="text-foreground">
                         {expandedId === conversation.id
                           ? conversation.query
@@ -283,7 +285,7 @@ export default function ConversationHistoryPage() {
 
                     {/* Response */}
                     <div className="mb-3">
-                      <div className="text-sm text-muted-foreground mb-1 font-medium">Reponse:</div>
+                      <div className="text-sm text-muted-foreground mb-1 font-medium">{t('history.response')}</div>
                       <div className="text-muted-foreground text-sm">
                         {expandedId === conversation.id
                           ? conversation.response
@@ -299,7 +301,7 @@ export default function ConversationHistoryPage() {
                         onClick={() => setExpandedId(expandedId === conversation.id ? null : conversation.id)}
                         className="p-0 h-auto text-primary"
                       >
-                        {expandedId === conversation.id ? 'Voir moins' : 'Voir plus'}
+                        {expandedId === conversation.id ? t('history.showLess') : t('history.showMore')}
                       </Button>
                     )}
                   </CardContent>
@@ -313,12 +315,12 @@ export default function ConversationHistoryPage() {
       {/* Delete Confirmation Dialog */}
       {conversationToDelete && (
         <ConfirmDialog
-          title="Supprimer la conversation"
-          message="Etes-vous sur de vouloir supprimer cette conversation ? Cette action est irreversible."
+          title={t('history.deleteConversation')}
+          message={t('history.deleteConfirm')}
           onConfirm={() => handleDelete(conversationToDelete)}
           onCancel={() => setConversationToDelete(null)}
-          confirmText="Supprimer"
-          cancelText="Annuler"
+          confirmText={t('history.confirmDelete')}
+          cancelText={t('history.cancelDelete')}
         />
       )}
     </MainLayout>

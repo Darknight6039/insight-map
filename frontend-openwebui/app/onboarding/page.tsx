@@ -269,7 +269,7 @@ export default function OnboardingPage() {
                     )}
                   >
                     <Rocket className="h-6 w-6" />
-                    <span className="font-medium">Startup</span>
+                    <span className="font-medium">{t('onboarding.orgTypes.startup') || 'Startup'}</span>
                   </button>
                   <button
                     type="button"
@@ -282,7 +282,7 @@ export default function OnboardingPage() {
                     )}
                   >
                     <Users className="h-6 w-6" />
-                    <span className="font-medium text-sm">Structure d'accompagnement</span>
+                    <span className="font-medium text-sm">{t('onboarding.step1.supportStructure') || 'Support structure'}</span>
                   </button>
                   <button
                     type="button"
@@ -295,7 +295,7 @@ export default function OnboardingPage() {
                     )}
                   >
                     <Building2 className="h-6 w-6" />
-                    <span className="font-medium">Autre</span>
+                    <span className="font-medium">{t('onboarding.step1.other') || 'Other'}</span>
                   </button>
                 </div>
 
@@ -322,7 +322,7 @@ export default function OnboardingPage() {
                 <Label>{t('onboarding.step2.sector') || "Secteur d'activité"}</Label>
                 <Select value={data.sector} onValueChange={(v) => updateData('sector', v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez un secteur" />
+                    <SelectValue placeholder={t('onboarding.step2.sectorPlaceholder') || 'Select a sector'} />
                   </SelectTrigger>
                   <SelectContent className="bg-popover">
                     {sectors.map(sector => (
@@ -337,7 +337,7 @@ export default function OnboardingPage() {
                 <Label>{t('onboarding.step2.employees') || "Nombre d'employés"}</Label>
                 <Select value={data.employeeCount} onValueChange={(v) => updateData('employeeCount', v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez une tranche" />
+                    <SelectValue placeholder={t('onboarding.step2.employeesPlaceholder') || 'Select a range'} />
                   </SelectTrigger>
                   <SelectContent className="bg-popover">
                     {employeeRanges.map(range => (
@@ -352,7 +352,7 @@ export default function OnboardingPage() {
                 <Label>{t('onboarding.step2.revenue') || "Chiffre d'affaires"}</Label>
                 <Select value={data.revenueRange} onValueChange={(v) => updateData('revenueRange', v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez une tranche" />
+                    <SelectValue placeholder={t('onboarding.step2.revenuePlaceholder') || 'Select a range'} />
                   </SelectTrigger>
                   <SelectContent className="bg-popover">
                     {revenueRanges.map(range => (
@@ -367,7 +367,7 @@ export default function OnboardingPage() {
                 <Label>{t('onboarding.step2.stage') || 'Stade de développement'}</Label>
                 <Select value={data.startupStage} onValueChange={(v) => updateData('startupStage', v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez un stade" />
+                    <SelectValue placeholder={t('onboarding.step2.stagePlaceholder') || 'Select a stage'} />
                   </SelectTrigger>
                   <SelectContent className="bg-popover">
                     {startupStages.map(stage => (
@@ -406,11 +406,11 @@ export default function OnboardingPage() {
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="yes" id="ai-yes" />
-                    <label htmlFor="ai-yes" className="cursor-pointer">Oui</label>
+                    <label htmlFor="ai-yes" className="cursor-pointer">{t('common.yes') || 'Yes'}</label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="no" id="ai-no" />
-                    <label htmlFor="ai-no" className="cursor-pointer">Non</label>
+                    <label htmlFor="ai-no" className="cursor-pointer">{t('common.no') || 'No'}</label>
                   </div>
                 </RadioGroup>
               </div>
@@ -446,7 +446,7 @@ export default function OnboardingPage() {
 
               {/* Structure Types */}
               <div className="space-y-3">
-                <Label>Type de structure</Label>
+                <Label>{t('onboarding.step2.structureType') || 'Structure type'}</Label>
                 <div className="grid grid-cols-1 gap-2">
                   {structureTypeOptions.map(type => (
                     <div key={type} className="flex items-center space-x-2">
@@ -465,10 +465,10 @@ export default function OnboardingPage() {
 
               {/* Startups Accompanied */}
               <div className="space-y-2">
-                <Label>Nombre de startups accompagnées</Label>
+                <Label>{t('onboarding.step2.startupsAccompanied') || 'Startups accompanied'}</Label>
                 <Select value={data.startupsAccompanied} onValueChange={(v) => updateData('startupsAccompanied', v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez une tranche" />
+                    <SelectValue placeholder={t('onboarding.step2.employeesPlaceholder') || 'Select a range'} />
                   </SelectTrigger>
                   <SelectContent className="bg-popover">
                     {startupsAccompaniedRanges.map(range => (
@@ -480,7 +480,7 @@ export default function OnboardingPage() {
 
               {/* Accompanied Stages */}
               <div className="space-y-3">
-                <Label>Stades accompagnés</Label>
+                <Label>{t('onboarding.step2.stagesAccompanied') || 'Accompanied stages'}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {accompaniedStageOptions.map(stage => (
                     <div key={stage} className="flex items-center space-x-2">
@@ -499,7 +499,7 @@ export default function OnboardingPage() {
 
               {/* Specialization Sectors */}
               <div className="space-y-3">
-                <Label>Secteurs de spécialisation</Label>
+                <Label>{t('onboarding.step2.specializationSectors') || 'Specialization sectors'}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {specializationSectorOptions.map(sector => (
                     <div key={sector} className="flex items-center space-x-2">
@@ -518,7 +518,7 @@ export default function OnboardingPage() {
 
               {/* Accompaniment Types */}
               <div className="space-y-3">
-                <Label>Types d'accompagnement</Label>
+                <Label>{t('onboarding.step2.accompanimentTypes') || 'Accompaniment types'}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {accompanimentTypeOptions.map(type => (
                     <div key={type} className="flex items-center space-x-2">
@@ -543,25 +543,25 @@ export default function OnboardingPage() {
               {currentStep > 1 ? (
                 <Button variant="outline" onClick={handleBack}>
                   <ChevronLeft className="h-4 w-4 mr-1" />
-                  Retour
+                  {t('common.back') || 'Back'}
                 </Button>
               ) : (
                 <Button variant="ghost" onClick={handleSkip} className="text-muted-foreground">
-                  Passer cette étape
+                  {t('onboarding.skip') || 'Skip this step'}
                 </Button>
               )}
             </div>
             <Button onClick={handleNext} disabled={!canProceed() || isSubmitting}>
               {isSubmitting ? (
-                'Enregistrement...'
+                t('onboarding.saving') || 'Saving...'
               ) : currentStep < totalSteps ? (
                 <>
-                  Suivant
+                  {t('common.next') || 'Next'}
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </>
               ) : (
                 <>
-                  Terminer
+                  {t('onboarding.finish') || 'Finish'}
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </>
               )}

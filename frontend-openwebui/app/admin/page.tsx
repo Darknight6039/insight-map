@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSupabaseAuth } from '../context/SupabaseAuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import { useRouter } from 'next/navigation'
 import MainLayout from '../components/layout/MainLayout'
 import { Button } from '../components/ui/button'
@@ -107,6 +108,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 export default function AdminPage() {
   const { user, token, isAdmin, isLoading: authLoading } = useSupabaseAuth()
   const router = useRouter()
+  const { t } = useTranslation()
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'invitations' | 'resets'>('dashboard')
   const [users, setUsers] = useState<User[]>([])
@@ -284,10 +286,10 @@ export default function AdminPage() {
         fetchInvitations()
       } else {
         const err = await response.json()
-        setError(err.detail || 'Erreur lors de la création')
+        setError(err.detail || t('admin.creationError'))
       }
     } catch (err) {
-      setError('Erreur de connexion')
+      setError(t('chat.connectionError'))
     } finally {
       setIsCreatingInvite(false)
     }
@@ -363,9 +365,9 @@ export default function AdminPage() {
                 <div>
                   <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                     <Shield className="w-6 h-6 text-[var(--axial-accent)]" />
-                    Administration
+                    {t('admin.title')}
                   </h1>
-                  <p className="text-muted-foreground text-sm">Gérer les utilisateurs et les invitations</p>
+                  <p className="text-muted-foreground text-sm">{t('admin.subtitle')}</p>
                 </div>
               </div>
               
@@ -381,7 +383,7 @@ export default function AdminPage() {
                 }}
               >
                 <RefreshCw className="w-4 h-4" />
-                Actualiser
+                {t('common.refresh')}
               </Button>
             </div>
           </motion.div>
@@ -398,7 +400,7 @@ export default function AdminPage() {
               }`}
             >
               <BarChart3 className="w-5 h-5" />
-              Dashboard
+              {t('admin.dashboard')}
             </Button>
             <Button
               variant={activeTab === 'users' ? 'default' : 'outline'}
@@ -410,7 +412,7 @@ export default function AdminPage() {
               }`}
             >
               <Users className="w-5 h-5" />
-              Utilisateurs ({users.length})
+              {t('admin.users')} ({users.length})
             </Button>
             <Button
               variant={activeTab === 'invitations' ? 'default' : 'outline'}
@@ -422,7 +424,7 @@ export default function AdminPage() {
               }`}
             >
               <Ticket className="w-5 h-5" />
-              Invitations ({invitations.length})
+              {t('admin.invitations')} ({invitations.length})
             </Button>
             <Button
               variant={activeTab === 'resets' ? 'default' : 'outline'}
@@ -434,7 +436,7 @@ export default function AdminPage() {
               }`}
             >
               <Mail className="w-5 h-5" />
-              Réinitialisations ({passwordResets.filter(r => !r.used_at && !isExpired(r.expires_at)).length})
+              {t('admin.resets')} ({passwordResets.filter(r => !r.used_at && !isExpired(r.expires_at)).length})
             </Button>
           </div>
 
@@ -451,7 +453,7 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <div className="flex flex-wrap items-end gap-4">
                     <div>
-                      <label className="block text-sm text-muted-foreground mb-1">Date de début</label>
+                      <label className="block text-sm text-muted-foreground mb-1">{t('admin.startDate')}</label>
                       <input
                         type="date"
                         value={dateRange.start}
@@ -460,7 +462,7 @@ export default function AdminPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm text-muted-foreground mb-1">Date de fin</label>
+                      <label className="block text-sm text-muted-foreground mb-1">{t('admin.endDate')}</label>
                       <input
                         type="date"
                         value={dateRange.end}
@@ -475,7 +477,7 @@ export default function AdminPage() {
                       }}
                     >
                       <Calendar className="w-4 h-4" />
-                      Appliquer
+                      {t('common.apply')}
                     </Button>
                     <Button
                       variant="outline"
@@ -485,7 +487,7 @@ export default function AdminPage() {
                         fetchRecentActivities()
                       }}
                     >
-                      Réinitialiser
+                      {t('common.reset')}
                     </Button>
                   </div>
                 </div>
@@ -497,8 +499,8 @@ export default function AdminPage() {
                       <Users className="w-6 h-6 text-blue-400" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">{dashboardStats?.total_users || 0}</div>
-                    <div className="text-sm text-muted-foreground">Utilisateurs</div>
-                    <div className="text-xs text-green-400 mt-1">{dashboardStats?.active_users || 0} actifs</div>
+                    <div className="text-sm text-muted-foreground">{t('admin.statsUsers')}</div>
+                    <div className="text-xs text-green-400 mt-1">{dashboardStats?.active_users || 0} {t('admin.statsActive')}</div>
                   </div>
                   
                   <div className="glass-card text-center">
@@ -506,8 +508,8 @@ export default function AdminPage() {
                       <FileText className="w-6 h-6 text-purple-400" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">{dashboardStats?.total_reports || 0}</div>
-                    <div className="text-sm text-muted-foreground">Rapports</div>
-                    <div className="text-xs text-green-400 mt-1">+{dashboardStats?.reports_week || 0} cette semaine</div>
+                    <div className="text-sm text-muted-foreground">{t('admin.statsReports')}</div>
+                    <div className="text-xs text-green-400 mt-1">+{dashboardStats?.reports_week || 0} {t('admin.statsThisWeek')}</div>
                   </div>
                   
                   <div className="glass-card text-center">
@@ -515,8 +517,8 @@ export default function AdminPage() {
                       <Eye className="w-6 h-6 text-cyan-400" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">{dashboardStats?.total_watches || 0}</div>
-                    <div className="text-sm text-muted-foreground">Veilles</div>
-                    <div className="text-xs text-green-400 mt-1">+{dashboardStats?.watches_created_week || 0} cette semaine</div>
+                    <div className="text-sm text-muted-foreground">{t('admin.statsWatches')}</div>
+                    <div className="text-xs text-green-400 mt-1">+{dashboardStats?.watches_created_week || 0} {t('admin.statsThisWeek')}</div>
                   </div>
                   
                   <div className="glass-card text-center">
@@ -524,8 +526,8 @@ export default function AdminPage() {
                       <LogIn className="w-6 h-6 text-green-400" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">{dashboardStats?.total_logins_today || 0}</div>
-                    <div className="text-sm text-muted-foreground">Connexions</div>
-                    <div className="text-xs text-muted-foreground mt-1">{dashboardStats?.total_logins_week || 0} cette semaine</div>
+                    <div className="text-sm text-muted-foreground">{t('admin.statsLogins')}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{dashboardStats?.total_logins_week || 0} {t('admin.statsThisWeek')}</div>
                   </div>
                   
                   <div className="glass-card text-center">
@@ -533,8 +535,8 @@ export default function AdminPage() {
                       <Activity className="w-6 h-6 text-orange-400" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">{dashboardStats?.total_activities_today || 0}</div>
-                    <div className="text-sm text-muted-foreground">Activités</div>
-                    <div className="text-xs text-muted-foreground mt-1">aujourd&apos;hui</div>
+                    <div className="text-sm text-muted-foreground">{t('admin.statsActivities')}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{t('admin.statsToday')}</div>
                   </div>
                 </div>
 
@@ -545,7 +547,7 @@ export default function AdminPage() {
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-[var(--axial-accent)]" />
-                        Activité par jour
+                        {t('admin.activityByDay')}
                       </h3>
                       <select
                         value={chartDays}
@@ -572,7 +574,7 @@ export default function AdminPage() {
                             <div 
                               className="w-full bg-gradient-to-t from-[var(--axial-accent)] to-[var(--accent)] rounded-t transition-all"
                               style={{ height: `${Math.max(height, 2)}%` }}
-                              title={`${day.date}: ${total} activités`}
+                              title={`${day.date}: ${total} ${t('admin.activities')}`}
                             />
                             <span className="text-[10px] text-muted-foreground rotate-[-45deg] origin-top-left whitespace-nowrap">
                               {day.date.slice(5)}
@@ -583,10 +585,10 @@ export default function AdminPage() {
                     </div>
                     
                     <div className="flex flex-wrap justify-center gap-3 mt-4 text-xs">
-                      <span className="flex items-center gap-1"><LogIn className="w-3 h-3 text-green-400" /> Connexions</span>
-                      <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-purple-400" /> Rapports</span>
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3 text-cyan-400" /> Veilles</span>
-                      <span className="flex items-center gap-1"><Search className="w-3 h-3 text-blue-400" /> Recherches</span>
+                      <span className="flex items-center gap-1"><LogIn className="w-3 h-3 text-green-400" /> {t('admin.statsLogins')}</span>
+                      <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-purple-400" /> {t('admin.statsReports')}</span>
+                      <span className="flex items-center gap-1"><Eye className="w-3 h-3 text-cyan-400" /> {t('admin.statsWatches')}</span>
+                      <span className="flex items-center gap-1"><Search className="w-3 h-3 text-blue-400" /> {t('admin.searches')}</span>
                     </div>
                   </div>
 
@@ -594,12 +596,12 @@ export default function AdminPage() {
                   <div className="glass-card">
                     <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
                       <FileText className="w-5 h-5 text-[var(--axial-accent)]" />
-                      Rapports par type
+                      {t('admin.reportsByType')}
                     </h3>
                     
                     {reportsByType.length === 0 || (reportsByType.length === 1 && reportsByType[0].count === 0) ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        Aucune donnée disponible
+                        {t('admin.noData')}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -632,12 +634,12 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
                     <Activity className="w-5 h-5 text-[var(--axial-accent)]" />
-                    Activités récentes
+                    {t('admin.recentActivities')}
                   </h3>
                   
                   {recentActivities.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      Aucune activité enregistrée
+                      {t('admin.noActivities')}
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -654,14 +656,14 @@ export default function AdminPage() {
                         }
                         
                         const actionLabels: Record<string, string> = {
-                          login: 's\'est connecté',
-                          report_created: 'a créé un rapport',
-                          search: 'a effectué une recherche',
-                          chat_message: 'a envoyé un message',
-                          watch_created: 'a créé une veille',
-                          watch_updated: 'a modifié une veille',
-                          watch_triggered: 'a déclenché une veille',
-                          watch_deleted: 'a supprimé une veille',
+                          login: t('admin.actions.loggedIn'),
+                          report_created: t('admin.actions.createdReport'),
+                          search: t('admin.actions.searched'),
+                          chat_message: t('admin.actions.sentMessage'),
+                          watch_created: t('admin.actions.createdWatch'),
+                          watch_updated: t('admin.actions.updatedWatch'),
+                          watch_triggered: t('admin.actions.triggeredWatch'),
+                          watch_deleted: t('admin.actions.deletedWatch'),
                         }
                         
                         return (
@@ -675,7 +677,7 @@ export default function AdminPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-foreground truncate">
-                                  {activity.user_name || activity.user_email || 'Utilisateur inconnu'}
+                                  {activity.user_name || activity.user_email || t('admin.unknownUser')}
                                 </span>
                                 <span className="text-muted-foreground text-sm">
                                   {actionLabels[activity.action] || activity.action}
@@ -711,7 +713,7 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Users className="w-5 h-5 text-[var(--axial-accent)]" />
-                    Liste des utilisateurs
+                    {t('admin.usersList')}
                   </h2>
                   
                   <div className="space-y-3">
@@ -751,13 +753,13 @@ export default function AdminPage() {
                               )}
                               {!u.is_active && (
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
-                                  Désactivé
+                                  {t('admin.disabled')}
                                 </span>
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground">{u.email}</p>
                             <p className="text-xs text-muted-foreground">
-                              Inscrit le {formatDate(u.created_at)}
+                              {t('admin.registeredOn')} {formatDate(u.created_at)}
                             </p>
                           </div>
                         </div>
@@ -771,7 +773,7 @@ export default function AdminPage() {
                               ? 'text-muted-foreground hover:text-destructive hover:bg-destructive/10'
                               : 'text-muted-foreground hover:text-green-400 hover:bg-green-500/10'
                             }
-                            title={u.is_active ? 'Désactiver' : 'Activer'}
+                            title={u.is_active ? t('common.deactivate') : t('common.activate')}
                           >
                             {u.is_active ? (
                               <ShieldOff className="w-5 h-5" />
@@ -797,14 +799,14 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                     <UserPlus className="w-5 h-5 text-[var(--axial-accent)]" />
-                    Créer une invitation
+                    {t('admin.createInvitation')}
                   </h2>
                   
                   <form onSubmit={handleCreateInvitation} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm text-muted-foreground mb-2">
-                          Email (optionnel)
+                          {t('admin.emailOptional')}
                         </label>
                         <div className="relative">
                           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -812,7 +814,7 @@ export default function AdminPage() {
                             type="email"
                             value={inviteEmail}
                             onChange={(e) => setInviteEmail(e.target.value)}
-                            placeholder="Laisser vide pour invitation générique"
+                            placeholder={t('admin.emailPlaceholder')}
                             className="glass-input w-full pl-10"
                           />
                         </div>
@@ -820,7 +822,7 @@ export default function AdminPage() {
                       
                       <div>
                         <label className="block text-sm text-muted-foreground mb-2">
-                          Expiration
+                          {t('admin.expiration')}
                         </label>
                         <div className="relative">
                           <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -855,7 +857,7 @@ export default function AdminPage() {
                       ) : (
                         <UserPlus className="w-5 h-5" />
                       )}
-                      Générer une invitation
+                      {t('admin.generateInvitation')}
                     </Button>
                   </form>
                   
@@ -870,7 +872,7 @@ export default function AdminPage() {
                       >
                         <p className="text-green-400 text-sm mb-2 flex items-center gap-2">
                           <CheckCircle className="w-4 h-4" />
-                          Invitation créée avec succès !
+                          {t('admin.invitationCreated')}
                         </p>
                         <div className="flex items-center gap-2">
                           <code className="flex-1 p-3 rounded-lg bg-black/30 text-foreground text-sm font-mono break-all">
@@ -896,12 +898,12 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Ticket className="w-5 h-5 text-[var(--axial-accent)]" />
-                    Invitations existantes
+                    {t('admin.existingInvitations')}
                   </h2>
                   
                   {invitations.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">
-                      Aucune invitation créée
+                      {t('admin.noInvitations')}
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -928,35 +930,35 @@ export default function AdminPage() {
                                   {used ? (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">
                                       <CheckCircle className="w-3 h-3" />
-                                      Utilisée
+                                      {t('admin.used')}
                                     </span>
                                   ) : expired ? (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
                                       <XCircle className="w-3 h-3" />
-                                      Expirée
+                                      {t('admin.expired')}
                                     </span>
                                   ) : (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">
                                       <Clock className="w-3 h-3" />
-                                      Active
+                                      {t('common.active')}
                                     </span>
                                   )}
                                   {inv.email && (
                                     <span className="text-xs text-muted-foreground">
-                                      Pour: {inv.email}
+                                      {t('admin.for')} {inv.email}
                                     </span>
                                   )}
                                 </div>
-                                
+
                                 <code className="text-sm text-foreground font-mono block truncate">
                                   {inv.code}
                                 </code>
-                                
+
                                 <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                                  <span>Créée: {formatDate(inv.created_at)}</span>
-                                  <span>Expire: {formatDate(inv.expires_at)}</span>
+                                  <span>{t('admin.created')} {formatDate(inv.created_at)}</span>
+                                  <span>{t('admin.expires')} {formatDate(inv.expires_at)}</span>
                                   {inv.used_at && (
-                                    <span>Utilisée: {formatDate(inv.used_at)}</span>
+                                    <span>{t('admin.used')}: {formatDate(inv.used_at)}</span>
                                   )}
                                 </div>
                               </div>
@@ -991,17 +993,16 @@ export default function AdminPage() {
                 <div className="glass-card">
                   <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Mail className="w-5 h-5 text-[var(--axial-accent)]" />
-                    Demandes de réinitialisation
+                    {t('admin.passwordResets')}
                   </h2>
-                  
+
                   <p className="text-muted-foreground text-sm mb-4">
-                    Les utilisateurs peuvent demander une réinitialisation via la page de connexion.
-                    Partagez le lien ci-dessous avec l&apos;utilisateur concerné.
+                    {t('admin.passwordResetsDesc')}
                   </p>
                   
                   {passwordResets.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">
-                      Aucune demande de réinitialisation
+                      {t('admin.noResets')}
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -1030,24 +1031,24 @@ export default function AdminPage() {
                                   {used ? (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">
                                       <CheckCircle className="w-3 h-3" />
-                                      Utilisée
+                                      {t('admin.used')}
                                     </span>
                                   ) : expired ? (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
                                       <XCircle className="w-3 h-3" />
-                                      Expirée
+                                      {t('admin.expired')}
                                     </span>
                                   ) : (
                                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">
                                       <Clock className="w-3 h-3" />
-                                      Active
+                                      {t('common.active')}
                                     </span>
                                   )}
                                 </div>
-                                
+
                                 {isActive && (
                                   <div className="mb-2">
-                                    <p className="text-xs text-muted-foreground mb-1">Lien de réinitialisation :</p>
+                                    <p className="text-xs text-muted-foreground mb-1">{t('admin.resetLink')}</p>
                                     <code className="text-sm text-foreground font-mono block truncate bg-black/30 p-2 rounded">
                                       {typeof window !== 'undefined' ? window.location.origin : ''}/reset-password?token={reset.token}
                                     </code>
@@ -1055,10 +1056,10 @@ export default function AdminPage() {
                                 )}
                                 
                                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                  <span>Demandée: {formatDate(reset.created_at)}</span>
-                                  <span>Expire: {formatDate(reset.expires_at)}</span>
+                                  <span>{t('admin.requested')} {formatDate(reset.created_at)}</span>
+                                  <span>{t('admin.expires')} {formatDate(reset.expires_at)}</span>
                                   {reset.used_at && (
-                                    <span>Utilisée: {formatDate(reset.used_at)}</span>
+                                    <span>{t('admin.used')}: {formatDate(reset.used_at)}</span>
                                   )}
                                 </div>
                               </div>
